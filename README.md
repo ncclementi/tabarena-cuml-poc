@@ -1,6 +1,20 @@
 # tabarena-cuml-poc
 Benchmarking sklearn estimators accelerated via cuml accel 
 
+## Running the cuML-accelerated benchmark quickstart
+
+To test cuML-accelerated estimators with TabArena, you can use the pre-configured example, copy the file in the tabarena repo location indicated below after installation is done. 
+
+```bash
+cp run_quickstart_tabarena_cuml.py tabarena/examples/benchmarking/
+python run_quickstart_tabarena_cuml.py
+```
+
+This will run the cuML Random Forest benchmark on a few small datasets.  
+You can modify the script to experiment with other models or datasets as needed.
+
+
+
 ## Setup
 
 To set up the environment in a reproducible way, run the provided setup script:
