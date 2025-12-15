@@ -1,6 +1,41 @@
 #!/bin/bash
 set -e  # Exit on error
 
+# Usage function
+usage() {
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "Setup script for TabArena cuML PoC environment."
+    echo ""
+    echo "Options:"
+    echo "  -h, --help              Show this help message and exit"
+    echo "  --ignore-cuda-warning   Bypass CUDA 13 version check"
+    echo ""
+    echo "This script will:"
+    echo "  1. Install uv (if not present)"
+    echo "  2. Create a Python 3.12 virtual environment"
+    echo "  3. Check for CUDA 13"
+    echo "  4. Install PyTorch with CUDA 13 support"
+    echo "  5. Clone and install AutoGluon"
+    echo "  6. Clone and install TabArena"
+    echo "  7. Install cuML"
+    exit 0
+}
+
+# Parse command line arguments
+IGNORE_CUDA_WARNING=false
+for arg in "$@"; do
+    case $arg in
+        -h|--help)
+            usage
+            ;;
+        --ignore-cuda-warning)
+            IGNORE_CUDA_WARNING=true
+            shift
+            ;;
+    esac
+done
+
 echo "=== TabArena cuML PoC Setup Script ==="
 echo ""
 
@@ -53,12 +88,22 @@ if command -v nvcc &> /dev/null; then
     CUDA_MAJOR=$(echo $CUDA_VERSION | cut -d'.' -f1)
     echo "CUDA version $CUDA_VERSION detected"
     if [ "$CUDA_MAJOR" != "13" ]; then
-        echo "ERROR: Expected CUDA 13 but found CUDA $CUDA_VERSION."
-        exit 1
+        if [ "$IGNORE_CUDA_WARNING" = true ]; then
+            echo "WARNING: Expected CUDA 13 but found CUDA $CUDA_VERSION. Continuing anyway (--ignore-cuda-warning)."
+        else
+            echo "ERROR: Expected CUDA 13 but found CUDA $CUDA_VERSION."
+            echo "Use --ignore-cuda-warning to bypass this check."
+            exit 1
+        fi
     fi
 else
-    echo "ERROR: nvcc not found. CUDA 13 must be installed and in PATH."
-    exit 1
+    if [ "$IGNORE_CUDA_WARNING" = true ]; then
+        echo "WARNING: nvcc not found. Continuing anyway (--ignore-cuda-warning)."
+    else
+        echo "ERROR: nvcc not found. CUDA 13 must be installed and in PATH."
+        echo "Use --ignore-cuda-warning to bypass this check."
+        exit 1
+    fi
 fi
 
 # Step 3: Install PyTorch
