@@ -31,16 +31,16 @@ if __name__ == '__main__':
         # This will be a `config` in EvaluationRepository, because it computes out-of-fold predictions and thus can be used for post-hoc ensemble.
         AGModelBagExperiment(  # Wrapper for fitting a single bagged model via AutoGluon
             # The name you want the config to have
-            name="test_rf_model",#"LightGBM_c1_BAG_L1_Reproduced",
-
-            # The class of the model. Can also be a string if AutoGluon recognizes it, such as `"GBM"`
+            name="test_rf_model",
             # Supports any model that inherits from `autogluon.core.models.AbstractModel`
             model_cls=RFModel,
-            model_hyperparameters={"random_state": None, "ag.ens.use_child_oof": False,},
-                # "ag_args_ensemble": {"fold_fitting_strategy": "sequential_local"},  # uncomment to fit folds sequentially, allowing for use of a debugger
-            # },  # The non-default model hyperparameters.
-            num_bag_folds=8,#8,  # num_bag_folds=8 was used in the TabArena 2025 paper
-            time_limit=300, #3600,  # time_limit=3600 was used in the TabArena 2025 paper
+            model_hyperparameters={"random_state": None, "ag.ens.use_child_oof": False,
+            "ag_args_ensemble": {"fold_fitting_strategy": "sequential_local"},  # uncomment to fit folds sequentially, allowing for use of a debugger
+            #"ag_args_fit":{'num_gpus': 0},  # uncomment to run on cpu
+            },
+            # The non-default model hyperparameters.
+            num_bag_folds=8,  # num_bag_folds=8 was used in the TabArena 2025 paper
+            time_limit=300,  # time_limit=300 for quick test (3600 was used in the TabArena 2025 paper)
         ),
     ]
 
@@ -63,11 +63,13 @@ if __name__ == '__main__':
     with pd.option_context("display.max_rows", None, "display.max_columns", None, "display.width", 1000):
         print(f"Results:\n{end_to_end_results.model_results.head(100)}")
 
-    leaderboard: pd.DataFrame = end_to_end_results.compare_on_tabarena(
-        output_dir=eval_dir,
-        only_valid_tasks=True,  # True: only compare on tasks ran in `results_lst`
-        use_model_results=True,  # If False: Will instead use the ensemble/HPO results
-        new_result_prefix="Demo_",
-    )
-    leaderboard_website = format_leaderboard(df_leaderboard=leaderboard)
-    print(leaderboard_website.to_markdown(index=False))
+    # compare_on_tabarena: Benchmarks your model against ~50 baseline models (LightGBM, XGBoost, LogisticRegression, etc.) by fitting ALL of them on your datasets
+
+    # leaderboard: pd.DataFrame = end_to_end_results.compare_on_tabarena(
+    #     output_dir=eval_dir,
+    #     only_valid_tasks=True,  # True: only compare on tasks ran in `results_lst`
+    #     use_model_results=True,  # If False: Will instead use the ensemble/HPO results
+    #     new_result_prefix="Demo_",
+    # )
+    # leaderboard_website = format_leaderboard(df_leaderboard=leaderboard)
+    # print(leaderboard_website.to_markdown(index=False))
