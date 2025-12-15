@@ -7,6 +7,7 @@ To test cuML-accelerated estimators with TabArena, you can use the pre-configure
 
 ```bash
 cp run_quickstart_tabarena_cuml.py tabarena/examples/benchmarking/
+cd ./tabarena/examples/benchmarking
 python run_quickstart_tabarena_cuml.py
 ```
 
