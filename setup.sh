@@ -143,7 +143,7 @@ if [ -n "$TABARENA_COMMIT" ]; then
 fi
 
 echo "Installing TabArena with benchmark extras..."
-uv pip install -e tabarena/[benchmark]
+uv pip install --prerelease=allow -e ./tabarena[benchmark]
 
 cd "$SCRIPT_DIR"
 echo "TabArena installed"
