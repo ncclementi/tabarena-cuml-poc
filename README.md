@@ -11,10 +11,16 @@ cd ./tabarena/examples/benchmarking
 python run_quickstart_tabarena_cuml.py
 ```
 
-This will run the cuML Random Forest benchmark on a few small datasets.  
+This will run the cuML Random Forest benchmark on a small few small datasets.  
 You can modify the script to experiment with other models or datasets as needed.
 
+### Create profiles
 
+```bash
+cp run_datasets_* tabarena/examples/benchmarking/
+cd ./tabarena/examples/benchmarking
+./run_datasets_cuml_prof.sh # you can run the cprofiles too
+```
 
 ## Setup
 
