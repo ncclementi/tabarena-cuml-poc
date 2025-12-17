@@ -11,16 +11,17 @@ from tabarena.nips2025_utils.tabarena_context import TabArenaContext
 from bencheval.website_format import format_leaderboard
 
 
-if __name__ == '__main__':
+
+def main() -> None:
     expname = str(Path(__file__).parent / "experiments" / "quickstart")  # folder location to save all experiment artifacts
     eval_dir = Path(__file__).parent / "eval" / "quickstart"
-    ignore_cache = False  # set to True to overwrite existing caches and re-run experiments from scratch
+    ignore_cache = True  # set to True to overwrite existing caches and re-run experiments from scratch
 
     tabarena_context = TabArenaContext()
     task_metadata = tabarena_context.task_metadata
 
     # Sample for a quick demo
-    datasets = ["anneal"] # "credit-g", "diabetes", "APSFailure", "customer_satisfaction_in_airline"]
+    datasets = ["anneal"] # ,"credit-g", "diabetes", "APSFailure", "customer_satisfaction_in_airline"]
     folds = [0]
 
     # import your model classes
@@ -31,11 +32,13 @@ if __name__ == '__main__':
         # This will be a `config` in EvaluationRepository, because it computes out-of-fold predictions and thus can be used for post-hoc ensemble.
         AGModelBagExperiment(  # Wrapper for fitting a single bagged model via AutoGluon
             # The name you want the config to have
-            name="test_rf_model",
+            name="test_rf_model_gpu_anneal",#"LightGBM_c1_BAG_L1_Reproduced",
+
+            # The class of the model. Can also be a string if AutoGluon recognizes it, such as `"GBM"`
             # Supports any model that inherits from `autogluon.core.models.AbstractModel`
             model_cls=RFModel,
             model_hyperparameters={"random_state": None, "ag.ens.use_child_oof": False,
-            "ag_args_ensemble": {"fold_fitting_strategy": "sequential_local"},  # uncomment to fit folds sequentially, allowing for use of a debugger
+            "ag_args_ensemble": {"fold_fitting_strategy": "sequential_local",},  # uncomment to fit folds sequentially, allowing for use of a debugger
             #"ag_args_fit":{'num_gpus': 0},  # uncomment to run on cpu
             },
             # The non-default model hyperparameters.
@@ -73,3 +76,6 @@ if __name__ == '__main__':
     # )
     # leaderboard_website = format_leaderboard(df_leaderboard=leaderboard)
     # print(leaderboard_website.to_markdown(index=False))
+
+if __name__ == "__main__":
+    main()
