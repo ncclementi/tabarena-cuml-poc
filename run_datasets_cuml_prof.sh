@@ -5,8 +5,7 @@ datasets=("anneal" "credit-g" "diabetes" "APSFailure" "customer_satisfaction_in_
 
 # Base directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-BASE_SCRIPT="$SCRIPT_DIR/run_quickstart_tabarena_cuml.py"
-TEMP_SCRIPT="$SCRIPT_DIR/run_quickstart_tabarena_cuml_temp.py"
+BENCHMARK_SCRIPT="$SCRIPT_DIR/run_quickstart_tabarena_cuml.py"
 RESULTS_DIR="$SCRIPT_DIR/results_per_dataset"
 
 # Create results directory if it doesn't exist
@@ -18,16 +17,11 @@ for dataset in "${datasets[@]}"; do
     echo "Running benchmark for dataset: $dataset"
     echo "=========================================="
     
-    # Create a temporary modified script for this dataset
-    # Replace the datasets list and the experiment name
-    sed -e "s/datasets = \[\"anneal\"\]/datasets = [\"$dataset\"]/" \
-        -e "s/name=\"test_rf_model_gpu_anneal\"/name=\"test_rf_model_gpu_$dataset\"/" \
-        "$BASE_SCRIPT" > "$TEMP_SCRIPT"
-    
-    # Run the benchmark with cuml.accel profiling
+    # Run the benchmark with cuml.accel profiling using environment variables
     OUTPUT_FILE="$RESULTS_DIR/${dataset}_output.txt"
-    echo "Running: python -m cuml.accel --profile $TEMP_SCRIPT"
-    python -m cuml.accel --profile "$TEMP_SCRIPT" 2>&1 | tee "$OUTPUT_FILE"
+    echo "Running: TABARENA_DATASETS=$dataset TABARENA_EXPERIMENT_NAME=test_rf_model_gpu_$dataset python -m cuml.accel --profile $BENCHMARK_SCRIPT"
+    TABARENA_DATASETS="$dataset" TABARENA_EXPERIMENT_NAME="test_rf_model_gpu_$dataset" \
+        python -m cuml.accel --profile "$BENCHMARK_SCRIPT" 2>&1 | tee "$OUTPUT_FILE"
     
     # Extract the results section (from "Results:" to the end)
     RESULTS_FILE="$RESULTS_DIR/${dataset}_results.txt"
@@ -52,9 +46,6 @@ for dataset in "${datasets[@]}"; do
         rm -rf "$SCRIPT_DIR/experiments"
         echo "Deleted experiments folder"
     fi
-    
-    # Remove temporary script
-    rm -f "$TEMP_SCRIPT"
     
     echo "Completed benchmark for dataset: $dataset"
     echo ""

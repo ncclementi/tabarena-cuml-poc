@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,10 @@ from tabarena.nips2025_utils.tabarena_context import TabArenaContext
 from bencheval.website_format import format_leaderboard
 
 
+# Environment variables for configuration:
+# TABARENA_DATASETS: comma-separated list of datasets (default: "anneal")
+# TABARENA_EXPERIMENT_NAME: name for the experiment (default: "test_rf_model_gpu_anneal")
+
 
 def main() -> None:
     expname = str(Path(__file__).parent / "experiments" / "quickstart")  # folder location to save all experiment artifacts
@@ -20,8 +25,13 @@ def main() -> None:
     tabarena_context = TabArenaContext()
     task_metadata = tabarena_context.task_metadata
 
-    # Sample for a quick demo
-    datasets = ["anneal"] # ,"credit-g", "diabetes", "APSFailure", "customer_satisfaction_in_airline"]
+    # Read datasets from environment variable or use default
+    datasets_env = os.environ.get("TABARENA_DATASETS", "anneal")
+    datasets = [d.strip() for d in datasets_env.split(",")]
+    
+    # Read experiment name from environment variable or use default
+    experiment_name = os.environ.get("TABARENA_EXPERIMENT_NAME", "test_rf_model_gpu_anneal")
+    
     folds = [0]
 
     # import your model classes
@@ -32,7 +42,7 @@ def main() -> None:
         # This will be a `config` in EvaluationRepository, because it computes out-of-fold predictions and thus can be used for post-hoc ensemble.
         AGModelBagExperiment(  # Wrapper for fitting a single bagged model via AutoGluon
             # The name you want the config to have
-            name="test_rf_model_gpu_anneal",#"LightGBM_c1_BAG_L1_Reproduced",
+            name=experiment_name,
 
             # The class of the model. Can also be a string if AutoGluon recognizes it, such as `"GBM"`
             # Supports any model that inherits from `autogluon.core.models.AbstractModel`
