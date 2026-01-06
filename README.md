@@ -17,9 +17,11 @@ To set up the environment in a reproducible way, run the provided setup script:
 1. Checks for and installs `uv` if needed
 2. Creates a Python 3.12 virtual environment
 3. Verifies CUDA 13 is available
-4. Installs cuML-cu13 version 25.12.00
+4. Installs PyTorch with CUDA 13 support
 5. Clones/updates AutoGluon from https://github.com/csadorf/autogluon
 6. Clones/updates TabArena from https://github.com/csadorf/tabarena
+7. (optional) Builds and installs treelite from source
+8. Installs cuML-cu13 version 25.12.00
 
 After setup completes, activate the environment:
 ```bash
