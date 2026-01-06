@@ -27,7 +27,6 @@ cd ./tabarena/examples/benchmarking
 To set up the environment in a reproducible way, run the provided setup script:
 
 ```bash
-chmod +x setup.sh
 ./setup.sh
 ```
 
