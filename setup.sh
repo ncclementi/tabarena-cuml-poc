@@ -18,7 +18,8 @@ usage() {
     echo "  4. Install PyTorch with CUDA 13 support"
     echo "  5. Clone and install AutoGluon"
     echo "  6. Clone and install TabArena"
-    echo "  7. Install cuML"
+    echo "  7. Build and install treelite from source (if TREELITE_COMMIT is set)"
+    echo "  8. Install cuML"
     exit 0
 }
 
@@ -43,12 +44,22 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Commit hashes (set to empty string to use latest main)
+# Commit hashes (set to empty string to use latest main/master)
 AUTOGLUON_COMMIT="708849b"  # Example: "abc123def456"
 TABARENA_COMMIT="aeff2d8"   # Example: "789ghi012jkl"
+# TREELITE_REPO="https://github.com/dmlc/treelite"
+TREELITE_REPO="https://github.com/dantegd/treelite.git"
+TREELITE_COMMIT="0c46c84b9d72174de9b9a6c59e15865d895c6137"          # Set to build treelite from source, e.g., "abc123def456"
+
+# Determine total steps based on whether treelite will be built
+if [ -n "$TREELITE_COMMIT" ]; then
+    TOTAL_STEPS=7
+else
+    TOTAL_STEPS=6
+fi
 
 # Step 0: Check and install uv if needed
-echo "[Step 0/6] Checking for uv..."
+echo "[Step 0/$TOTAL_STEPS] Checking for uv..."
 if ! command -v uv &> /dev/null; then
     echo "uv not found. Installing uv..."
     curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -68,7 +79,7 @@ fi
 
 # Step 1: Create uv environment with Python 3.12
 echo ""
-echo "[Step 1/6] Creating uv environment with Python 3.12..."
+echo "[Step 1/$TOTAL_STEPS] Creating uv environment with Python 3.12..."
 if [ -d ".venv" ]; then
     echo "Removing existing virtual environment..."
     rm -rf .venv
@@ -82,7 +93,7 @@ source .venv/bin/activate
 
 # Step 2: Check for CUDA 13
 echo ""
-echo "[Step 2/6] Checking for CUDA 13..."
+echo "[Step 2/$TOTAL_STEPS] Checking for CUDA 13..."
 if command -v nvidia-smi &> /dev/null; then
     CUDA_VERSION=$(nvidia-smi | grep -oP 'CUDA Version: \K[0-9.]+')
     CUDA_MAJOR=$(echo $CUDA_VERSION | cut -d'.' -f1)
@@ -108,7 +119,7 @@ fi
 
 # Step 3: Install PyTorch
 echo ""
-echo "[Step 3/6] Installing PyTorch..."
+echo "[Step 3/$TOTAL_STEPS] Installing PyTorch..."
 uv pip install \
     --index-url https://download.pytorch.org/whl/cu130 \
     torch \
@@ -122,7 +133,7 @@ uv pip install \
 
 # Step 4: Clone and install AutoGluon
 echo ""
-echo "[Step 4/6] Installing AutoGluon..."
+echo "[Step 4/$TOTAL_STEPS] Installing AutoGluon..."
 AUTOGLUON_REPO="https://github.com/csadorf/autogluon"
 if [ -d "autogluon" ]; then
     echo "AutoGluon directory exists. Checking remote..."
@@ -159,7 +170,7 @@ echo "AutoGluon installed"
 
 # Step 5: Clone and install TabArena
 echo ""
-echo "[Step 5/6] Installing TabArena..."
+echo "[Step 5/$TOTAL_STEPS] Installing TabArena..."
 TABARENA_REPO="https://github.com/csadorf/tabarena"
 if [ -d "tabarena" ]; then
     echo "TabArena directory exists. Checking remote..."
@@ -193,9 +204,75 @@ uv pip install --prerelease=allow -e ./tabarena[benchmark]
 cd "$SCRIPT_DIR"
 echo "TabArena installed"
 
-# Step 6: Install cuML
+# Step 6: Build and install treelite from source (optional)
+if [ -n "$TREELITE_COMMIT" ]; then
+    echo ""
+    echo "[Step 6/$TOTAL_STEPS] Building treelite from source..."
+    
+    # Check for cmake
+    if ! command -v cmake &> /dev/null; then
+        echo "ERROR: cmake is required to build treelite but was not found."
+        echo "Please install cmake (e.g., 'apt install cmake' or 'conda install cmake')"
+        exit 1
+    fi
+    
+    # Check for make
+    if ! command -v make &> /dev/null; then
+        echo "ERROR: make is required to build treelite but was not found."
+        echo "Please install make (e.g., 'apt install build-essential')"
+        exit 1
+    fi
+    
+    if [ -d "treelite" ]; then
+        echo "treelite directory exists. Checking remote..."
+        cd treelite
+        CURRENT_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
+        if [ "$CURRENT_REMOTE" != "$TREELITE_REPO" ] && [ "$CURRENT_REMOTE" != "${TREELITE_REPO}.git" ]; then
+            echo "Remote mismatch. Deleting and re-cloning..."
+            cd "$SCRIPT_DIR"
+            rm -rf treelite
+            git clone --recursive "$TREELITE_REPO"
+            cd treelite
+        else
+            echo "Fetching latest..."
+            git fetch origin
+        fi
+    else
+        echo "Cloning treelite from $TREELITE_REPO..."
+        git clone --recursive "$TREELITE_REPO"
+        cd treelite
+    fi
+    
+    # Checkout specific commit
+    echo "Checking out commit $TREELITE_COMMIT..."
+    git checkout "$TREELITE_COMMIT"
+    git submodule update --init --recursive
+    
+    # Build shared libraries
+    echo "Building treelite shared libraries..."
+    rm -rf build
+    mkdir build
+    cd build
+    cmake ..
+    make -j$(nproc)
+    
+    # Install Python package
+    echo "Installing treelite Python package..."
+    cd ../python
+    uv pip install .
+    
+    cd "$SCRIPT_DIR"
+    echo "treelite installed from source (commit: $TREELITE_COMMIT)"
+fi
+
+# Step 6 or 7: Install cuML (depending on whether treelite was built)
+if [ -n "$TREELITE_COMMIT" ]; then
+    CUML_STEP=7
+else
+    CUML_STEP=6
+fi
 echo ""
-echo "[Step 6/6] Installing cuML..."
+echo "[Step $CUML_STEP/$TOTAL_STEPS] Installing cuML..."
 uv pip install "cuml-cu13==25.12.00"
 echo "cuML installed"
 
