@@ -1,27 +1,6 @@
 # tabarena-cuml-poc
 Benchmarking sklearn estimators accelerated via cuml accel 
 
-## Running the cuML-accelerated benchmark quickstart
-
-To test cuML-accelerated estimators with TabArena, you can use the pre-configured example, copy the file in the tabarena repo location indicated below after installation is done. 
-
-```bash
-cp run_quickstart_tabarena_cuml.py tabarena/examples/benchmarking/
-cd ./tabarena/examples/benchmarking
-python -m cuml.accel run_quickstart_tabarena_cuml.py #currently POC not working at some point -m cuml.accel won't be needed
-```
-
-This will run the cuML Random Forest benchmark on a small few small datasets.  
-You can modify the script to experiment with other models or datasets as needed.
-
-### Create profiles
-
-```bash
-cp run_datasets_* tabarena/examples/benchmarking/
-cd ./tabarena/examples/benchmarking
-./run_datasets_cuml_prof.sh # you can run the cprofiles too
-```
-
 ## Setup
 
 To set up the environment in a reproducible way, run the provided setup script:
@@ -45,6 +24,27 @@ To set up the environment in a reproducible way, run the provided setup script:
 After setup completes, activate the environment:
 ```bash
 source .venv/bin/activate
+```
+
+## Running the cuML-accelerated benchmark quickstart
+
+To test cuML-accelerated estimators with TabArena, you can use the pre-configured example, copy the file in the tabarena repo location indicated below after installation is done. 
+
+```bash
+cp run_quickstart_tabarena_cuml.py tabarena/examples/benchmarking/
+cd ./tabarena/examples/benchmarking
+python -m cuml.accel run_quickstart_tabarena_cuml.py #currently POC not working at some point -m cuml.accel won't be needed
+```
+
+This will run the cuML Random Forest benchmark on a small few small datasets.
+You can modify the script to experiment with other models or datasets as needed.
+
+### Create profiles
+
+```bash
+cp run_datasets_* tabarena/examples/benchmarking/
+cd ./tabarena/examples/benchmarking
+./run_datasets_cuml_prof.sh # you can run the cprofiles too
 ```
 
 ## TODO: 
@@ -80,4 +80,3 @@ git clone https://github.com/csadorf/tabarena
 cd tabarena
 uv pip install -e tabarena/[benchmark]
 ```
-
