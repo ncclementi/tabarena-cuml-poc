@@ -44,6 +44,10 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Directory for third-party dependencies
+THIRDPARTY_DIR="$SCRIPT_DIR/src/thirdparty"
+mkdir -p "$THIRDPARTY_DIR"
+
 # Commit hashes (set to empty string to use latest main/master)
 AUTOGLUON_COMMIT="708849b"  # Example: "abc123def456"
 TABARENA_COMMIT="aeff2d8"   # Example: "789ghi012jkl"
@@ -135,24 +139,24 @@ uv pip install \
 echo ""
 echo "[Step 4/$TOTAL_STEPS] Installing AutoGluon..."
 AUTOGLUON_REPO="https://github.com/csadorf/autogluon"
-if [ -d "autogluon" ]; then
+AUTOGLUON_DIR="$THIRDPARTY_DIR/autogluon"
+if [ -d "$AUTOGLUON_DIR" ]; then
     echo "AutoGluon directory exists. Checking remote..."
-    cd autogluon
+    cd "$AUTOGLUON_DIR"
     CURRENT_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
     if [ "$CURRENT_REMOTE" != "$AUTOGLUON_REPO" ] && [ "$CURRENT_REMOTE" != "${AUTOGLUON_REPO}.git" ]; then
         echo "Remote mismatch. Deleting and re-cloning..."
-        cd "$SCRIPT_DIR"
-        rm -rf autogluon
-        git clone "$AUTOGLUON_REPO"
-        cd autogluon
+        rm -rf "$AUTOGLUON_DIR"
+        git clone "$AUTOGLUON_REPO" "$AUTOGLUON_DIR"
+        cd "$AUTOGLUON_DIR"
     else
         echo "Pulling latest from master..."
         git pull origin master
     fi
 else
     echo "Cloning AutoGluon from $AUTOGLUON_REPO..."
-    git clone "$AUTOGLUON_REPO"
-    cd autogluon
+    git clone "$AUTOGLUON_REPO" "$AUTOGLUON_DIR"
+    cd "$AUTOGLUON_DIR"
 fi
 
 # Checkout specific commit if specified
@@ -172,24 +176,24 @@ echo "AutoGluon installed"
 echo ""
 echo "[Step 5/$TOTAL_STEPS] Installing TabArena..."
 TABARENA_REPO="https://github.com/csadorf/tabarena"
-if [ -d "tabarena" ]; then
+TABARENA_DIR="$THIRDPARTY_DIR/tabarena"
+if [ -d "$TABARENA_DIR" ]; then
     echo "TabArena directory exists. Checking remote..."
-    cd tabarena
+    cd "$TABARENA_DIR"
     CURRENT_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
     if [ "$CURRENT_REMOTE" != "$TABARENA_REPO" ] && [ "$CURRENT_REMOTE" != "${TABARENA_REPO}.git" ]; then
         echo "Remote mismatch. Deleting and re-cloning..."
-        cd "$SCRIPT_DIR"
-        rm -rf tabarena
-        git clone "$TABARENA_REPO"
-        cd tabarena
+        rm -rf "$TABARENA_DIR"
+        git clone "$TABARENA_REPO" "$TABARENA_DIR"
+        cd "$TABARENA_DIR"
     else
         echo "Pulling latest from main..."
         git pull origin main
     fi
 else
     echo "Cloning TabArena from $TABARENA_REPO..."
-    git clone "$TABARENA_REPO"
-    cd tabarena
+    git clone "$TABARENA_REPO" "$TABARENA_DIR"
+    cd "$TABARENA_DIR"
 fi
 
 # Checkout specific commit if specified
@@ -223,24 +227,24 @@ if [ -n "$TREELITE_COMMIT" ]; then
         exit 1
     fi
     
-    if [ -d "treelite" ]; then
+    TREELITE_DIR="$THIRDPARTY_DIR/treelite"
+    if [ -d "$TREELITE_DIR" ]; then
         echo "treelite directory exists. Checking remote..."
-        cd treelite
+        cd "$TREELITE_DIR"
         CURRENT_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
         if [ "$CURRENT_REMOTE" != "$TREELITE_REPO" ] && [ "$CURRENT_REMOTE" != "${TREELITE_REPO}.git" ]; then
             echo "Remote mismatch. Deleting and re-cloning..."
-            cd "$SCRIPT_DIR"
-            rm -rf treelite
-            git clone --recursive "$TREELITE_REPO"
-            cd treelite
+            rm -rf "$TREELITE_DIR"
+            git clone --recursive "$TREELITE_REPO" "$TREELITE_DIR"
+            cd "$TREELITE_DIR"
         else
             echo "Fetching latest..."
             git fetch origin
         fi
     else
         echo "Cloning treelite from $TREELITE_REPO..."
-        git clone --recursive "$TREELITE_REPO"
-        cd treelite
+        git clone --recursive "$TREELITE_REPO" "$TREELITE_DIR"
+        cd "$TREELITE_DIR"
     fi
     
     # Checkout specific commit

@@ -1,5 +1,3 @@
-# Ignore tabarena and autogluon repositories
-tabarena/
-autogluon/
-treelite/
+# Ignore third-party repositories (cloned by setup.sh into src/thirdparty/)
+src/thirdparty/
 
