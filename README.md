@@ -28,16 +28,13 @@ source .venv/bin/activate
 
 ## Running the cuML-accelerated benchmark quickstart
 
-To test cuML-accelerated estimators with TabArena, you can use the pre-configured example, copy the file in the tabarena repo location indicated below after installation is done. 
+To test cuML-accelerated estimators with TabArena, run the quickstart script:
 
 ```bash
-cp run_quickstart_tabarena_cuml.py tabarena/examples/benchmarking/
-cd ./tabarena/examples/benchmarking
-python -m cuml.accel run_quickstart_tabarena_cuml.py #currently POC not working at some point -m cuml.accel won't be needed
-cd -  # return to original working directory
+./quickstart.sh
 ```
 
-This will run the cuML Random Forest benchmark on a small few small datasets.
+This will run the cuML Random Forest benchmark on a few small datasets.
 You can modify the script to experiment with other models or datasets as needed.
 
 ### Create profiles
