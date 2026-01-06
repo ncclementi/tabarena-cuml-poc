@@ -17,11 +17,12 @@ for dataset in "${datasets[@]}"; do
     echo "Running benchmark for dataset: $dataset"
     echo "=========================================="
     
-    # Run the benchmark with cuml.accel profiling using environment variables
+    # Run the benchmark with cuml.accel profiling using CLI options
     OUTPUT_FILE="$RESULTS_DIR/${dataset}_output.txt"
-    echo "Running: TABARENA_DATASETS=$dataset TABARENA_EXPERIMENT_NAME=test_rf_model_gpu_$dataset python -m cuml.accel --profile $BENCHMARK_SCRIPT"
-    TABARENA_DATASETS="$dataset" TABARENA_EXPERIMENT_NAME="test_rf_model_gpu_$dataset" \
-        python -m cuml.accel --profile "$BENCHMARK_SCRIPT" 2>&1 | tee "$OUTPUT_FILE"
+    echo "Running: python -m cuml.accel --profile $BENCHMARK_SCRIPT --datasets $dataset --experiment-name test_rf_model_gpu_$dataset"
+    python -m cuml.accel --profile "$BENCHMARK_SCRIPT" \
+        --datasets "$dataset" \
+        --experiment-name "test_rf_model_gpu_$dataset" 2>&1 | tee "$OUTPUT_FILE"
     
     # Extract the results section (from "Results:" to the end)
     RESULTS_FILE="$RESULTS_DIR/${dataset}_results.txt"

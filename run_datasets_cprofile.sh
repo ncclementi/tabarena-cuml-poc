@@ -5,8 +5,7 @@ datasets=("anneal" "credit-g" "diabetes" "APSFailure" "customer_satisfaction_in_
 
 # Base directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-BASE_SCRIPT="$SCRIPT_DIR/run_quickstart_tabarena_cuml.py"
-TEMP_SCRIPT="$SCRIPT_DIR/run_quickstart_tabarena_cuml_temp.py"
+BENCHMARK_SCRIPT="$SCRIPT_DIR/run_quickstart_tabarena_cuml.py"
 RESULTS_DIR="$SCRIPT_DIR/results_per_dataset_cprofile"
 PROFILES_DIR="$SCRIPT_DIR/cprofiles_per_dataset"
 
@@ -20,17 +19,13 @@ for dataset in "${datasets[@]}"; do
     echo "Running cProfile benchmark for dataset: $dataset"
     echo "=========================================="
     
-    # Create a temporary modified script for this dataset
-    # Replace the datasets list and the experiment name
-    sed -e "s/datasets = \[\"anneal\"\]/datasets = [\"$dataset\"]/" \
-        -e "s/name=\"test_rf_model_gpu_anneal\"/name=\"test_rf_model_gpu_$dataset\"/" \
-        "$BASE_SCRIPT" > "$TEMP_SCRIPT"
-    
-    # Run the benchmark with cProfile
+    # Run the benchmark with cProfile using CLI options
     PROFILE_FILE="$PROFILES_DIR/profile_${dataset}.prof"
     OUTPUT_FILE="$RESULTS_DIR/${dataset}_output.txt"
-    echo "Running: python -m cProfile -o $PROFILE_FILE -m cuml.accel $TEMP_SCRIPT"
-    python -m cProfile -o "$PROFILE_FILE" -m cuml.accel "$TEMP_SCRIPT" 2>&1 | tee "$OUTPUT_FILE"
+    echo "Running: python -m cProfile -o $PROFILE_FILE -m cuml.accel $BENCHMARK_SCRIPT --datasets $dataset --experiment-name test_rf_model_gpu_$dataset"
+    python -m cProfile -o "$PROFILE_FILE" -m cuml.accel "$BENCHMARK_SCRIPT" \
+        --datasets "$dataset" \
+        --experiment-name "test_rf_model_gpu_$dataset" 2>&1 | tee "$OUTPUT_FILE"
     
     echo "Profile saved to: $PROFILE_FILE"
     
@@ -57,9 +52,6 @@ for dataset in "${datasets[@]}"; do
         rm -rf "$SCRIPT_DIR/experiments"
         echo "Deleted experiments folder"
     fi
-    
-    # Remove temporary script
-    rm -f "$TEMP_SCRIPT"
     
     echo "Completed cProfile benchmark for dataset: $dataset"
     echo ""

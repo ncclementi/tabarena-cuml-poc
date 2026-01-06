@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
+import click
 import pandas as pd
 
 from tabarena.benchmark.experiment import AGModelBagExperiment, ExperimentBatchRunner
@@ -12,25 +12,55 @@ from tabarena.nips2025_utils.tabarena_context import TabArenaContext
 from bencheval.website_format import format_leaderboard
 
 
-# Environment variables for configuration:
-# TABARENA_DATASETS: comma-separated list of datasets (default: "anneal")
-# TABARENA_EXPERIMENT_NAME: name for the experiment (default: "test_rf_model_gpu_anneal")
-
-
-def main() -> None:
+@click.command()
+@click.option(
+    "--datasets", "-d",
+    default="anneal",
+    help="Comma-separated list of datasets to run benchmarks on.",
+    show_default=True,
+)
+@click.option(
+    "--experiment-name", "-n",
+    default="test_rf_model_gpu_anneal",
+    help="Name for the experiment.",
+    show_default=True,
+)
+@click.option(
+    "--time-limit", "-t",
+    default=300,
+    type=int,
+    help="Time limit in seconds for each experiment (3600 was used in the TabArena 2025 paper).",
+    show_default=True,
+)
+@click.option(
+    "--num-bag-folds",
+    default=8,
+    type=int,
+    help="Number of bag folds (8 was used in the TabArena 2025 paper).",
+    show_default=True,
+)
+@click.option(
+    "--ignore-cache/--use-cache",
+    default=True,
+    help="Whether to ignore existing caches and re-run experiments from scratch.",
+    show_default=True,
+)
+def main(
+    datasets: str,
+    experiment_name: str,
+    time_limit: int,
+    num_bag_folds: int,
+    ignore_cache: bool,
+) -> None:
+    """Run cuML-accelerated TabArena benchmarks with Random Forest model."""
     expname = str(Path(__file__).parent / "experiments" / "quickstart")  # folder location to save all experiment artifacts
     eval_dir = Path(__file__).parent / "eval" / "quickstart"
-    ignore_cache = True  # set to True to overwrite existing caches and re-run experiments from scratch
 
     tabarena_context = TabArenaContext()
     task_metadata = tabarena_context.task_metadata
 
-    # Read datasets from environment variable or use default
-    datasets_env = os.environ.get("TABARENA_DATASETS", "anneal")
-    datasets = [d.strip() for d in datasets_env.split(",")]
-    
-    # Read experiment name from environment variable or use default
-    experiment_name = os.environ.get("TABARENA_EXPERIMENT_NAME", "test_rf_model_gpu_anneal")
+    # Parse comma-separated datasets
+    dataset_list = [d.strip() for d in datasets.split(",")]
     
     folds = [0]
 
@@ -52,8 +82,8 @@ def main() -> None:
             #"ag_args_fit":{'num_gpus': 0},  # uncomment to run on cpu
             },
             # The non-default model hyperparameters.
-            num_bag_folds=8,  # num_bag_folds=8 was used in the TabArena 2025 paper
-            time_limit=300,  # time_limit=300 for quick test (3600 was used in the TabArena 2025 paper)
+            num_bag_folds=num_bag_folds,
+            time_limit=time_limit,
         ),
     ]
 
@@ -62,7 +92,7 @@ def main() -> None:
     # Get the run artifacts.
     # Fits each method on each task (datasets * folds)
     results_lst: list[dict[str, Any]] = exp_batch_runner.run(
-        datasets=datasets,
+        datasets=dataset_list,
         folds=folds,
         methods=methods,
         ignore_cache=ignore_cache,
