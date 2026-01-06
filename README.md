@@ -41,11 +41,16 @@ You can modify the script to experiment with other models or datasets as needed.
 
 ### Create profiles
 
+Generate cuml.accel profiles with:
+
 ```bash
-cp run_datasets_* tabarena/examples/benchmarking/
-cd ./tabarena/examples/benchmarking
-./run_datasets_cuml_prof.sh # you can run the cprofiles too
-cd -  # return to original working directory
+./run_datasets_cuml_prof.sh
+```
+
+Generate cProfiles with:
+
+```bash
+./run_datasets_cprofile.sh
 ```
 
 ## TODO: 

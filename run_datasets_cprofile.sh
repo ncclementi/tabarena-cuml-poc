@@ -5,7 +5,7 @@ datasets=("anneal" "credit-g" "diabetes" "APSFailure" "customer_satisfaction_in_
 
 # Base directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-BENCHMARK_SCRIPT="$SCRIPT_DIR/run_tabarena_rf_experiment.py"
+BENCHMARK_SCRIPT="$SCRIPT_DIR/scripts/run_tabarena_rf_experiment.py"
 RESULTS_DIR="$SCRIPT_DIR/results_per_dataset_cprofile"
 PROFILES_DIR="$SCRIPT_DIR/cprofiles_per_dataset"
 
