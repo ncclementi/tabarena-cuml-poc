@@ -34,6 +34,7 @@ To test cuML-accelerated estimators with TabArena, you can use the pre-configure
 cp run_quickstart_tabarena_cuml.py tabarena/examples/benchmarking/
 cd ./tabarena/examples/benchmarking
 python -m cuml.accel run_quickstart_tabarena_cuml.py #currently POC not working at some point -m cuml.accel won't be needed
+cd -  # return to original working directory
 ```
 
 This will run the cuML Random Forest benchmark on a small few small datasets.
@@ -45,6 +46,7 @@ You can modify the script to experiment with other models or datasets as needed.
 cp run_datasets_* tabarena/examples/benchmarking/
 cd ./tabarena/examples/benchmarking
 ./run_datasets_cuml_prof.sh # you can run the cprofiles too
+cd -  # return to original working directory
 ```
 
 ## TODO: 
