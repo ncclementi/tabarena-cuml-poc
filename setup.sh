@@ -83,10 +83,10 @@ source .venv/bin/activate
 # Step 2: Check for CUDA 13
 echo ""
 echo "[Step 2/6] Checking for CUDA 13..."
-if command -v nvcc &> /dev/null; then
-    CUDA_VERSION=$(nvcc --version | grep "release" | sed -n 's/.*release \([0-9]*\.[0-9]*\).*/\1/p')
+if command -v nvidia-smi &> /dev/null; then
+    CUDA_VERSION=$(nvidia-smi | grep -oP 'CUDA Version: \K[0-9.]+')
     CUDA_MAJOR=$(echo $CUDA_VERSION | cut -d'.' -f1)
-    echo "CUDA version $CUDA_VERSION detected"
+    echo "CUDA version $CUDA_VERSION detected (from nvidia-smi)"
     if [ "$CUDA_MAJOR" != "13" ]; then
         if [ "$IGNORE_CUDA_WARNING" = true ]; then
             echo "WARNING: Expected CUDA 13 but found CUDA $CUDA_VERSION. Continuing anyway (--ignore-cuda-warning)."
@@ -98,9 +98,9 @@ if command -v nvcc &> /dev/null; then
     fi
 else
     if [ "$IGNORE_CUDA_WARNING" = true ]; then
-        echo "WARNING: nvcc not found. Continuing anyway (--ignore-cuda-warning)."
+        echo "WARNING: nvidia-smi not found. Continuing anyway (--ignore-cuda-warning)."
     else
-        echo "ERROR: nvcc not found. CUDA 13 must be installed and in PATH."
+        echo "ERROR: nvidia-smi not found. NVIDIA driver with CUDA 13 support must be installed."
         echo "Use --ignore-cuda-warning to bypass this check."
         exit 1
     fi
