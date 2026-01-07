@@ -5,6 +5,7 @@ set -eu
 CUML_PROFILE=false
 CPROFILE=false
 EXPERIMENT_ID=""
+NUM_GPUS=""
 
 # Usage function
 usage() {
@@ -14,6 +15,7 @@ usage() {
     echo "  --cuml-profile       Enable cuml.accel profiling (--profile flag)"
     echo "  --cprofile           Enable cProfile profiling (saves .prof files)"
     echo "  --experiment-id ID   Use a custom experiment ID (default: auto-generated timestamp)"
+    echo "  --num-gpus N         Number of GPUs to use (0 for CPU-only, omit for default)"
     echo "  -h, --help           Show this help message"
     echo ""
     echo "Examples:"
@@ -22,6 +24,10 @@ usage() {
     echo "  $0 --cprofile                   # Run with cProfile profiling"
     echo "  $0 --cuml-profile --cprofile    # Run with both profiling modes"
     echo "  $0 --experiment-id my_exp_001   # Run with custom experiment ID"
+    echo "  $0 --num-gpus 0                 # Run on CPU only (no cuml.accel)"
+    echo "  $0 --num-gpus 1                 # Run with 1 GPU"
+    echo ""
+    echo "Note: --num-gpus 0 and --cuml-profile cannot be used together."
     exit 0
 }
 
@@ -40,6 +46,10 @@ while [[ $# -gt 0 ]]; do
             EXPERIMENT_ID="$2"
             shift 2
             ;;
+        --num-gpus)
+            NUM_GPUS="$2"
+            shift 2
+            ;;
         -h|--help)
             usage
             ;;
@@ -49,6 +59,13 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Validate incompatible options
+if [ "$CUML_PROFILE" = true ] && [ "$NUM_GPUS" = "0" ]; then
+    echo "Error: --num-gpus 0 and --cuml-profile cannot be used together."
+    echo "cuml.accel profiling requires GPU acceleration (num_gpus > 0)."
+    exit 1
+fi
 
 # Generate experiment ID if not provided (32-character UUID4)
 if [ -z "$EXPERIMENT_ID" ]; then
@@ -78,6 +95,11 @@ echo "Experiment Configuration:"
 echo "  Experiment ID: $EXPERIMENT_ID"
 echo "  cuml.accel --profile: $CUML_PROFILE"
 echo "  cProfile: $CPROFILE"
+if [ -n "$NUM_GPUS" ]; then
+    echo "  num_gpus: $NUM_GPUS"
+else
+    echo "  num_gpus: (default)"
+fi
 echo "  Results directory: $RESULTS_DIR"
 if [ "$CPROFILE" = true ]; then
     echo "  Profiles directory: $PROFILES_DIR"
@@ -94,34 +116,27 @@ for dataset in "${datasets[@]}"; do
     OUTPUT_FILE="$RESULTS_DIR/${dataset}_output.txt"
     EXPERIMENT_NAME="${EXPERIMENT_ID}_${dataset}"
 
-    # Build profiling metadata flags for Python script
-    PROFILE_FLAGS=""
-    if [ "$CUML_PROFILE" = true ]; then
-        PROFILE_FLAGS="$PROFILE_FLAGS --cuml-profile"
-    fi
-    if [ "$CPROFILE" = true ]; then
-        PROFILE_FLAGS="$PROFILE_FLAGS --cprofile"
-    fi
+    # Build command incrementally
+    CMD="python"
 
-    # Build the command based on profiling options
+    # Add cProfile module if enabled
     if [ "$CPROFILE" = true ]; then
         PROFILE_FILE="$PROFILES_DIR/${dataset}.prof"
-        if [ "$CUML_PROFILE" = true ]; then
-            # Both cProfile and cuml.accel profiling
-            CMD="python -m cProfile -o $PROFILE_FILE -m cuml.accel --profile $BENCHMARK_SCRIPT --datasets $dataset --experiment-name $EXPERIMENT_NAME$PROFILE_FLAGS"
-        else
-            # Only cProfile
-            CMD="python -m cProfile -o $PROFILE_FILE -m cuml.accel $BENCHMARK_SCRIPT --datasets $dataset --experiment-name $EXPERIMENT_NAME$PROFILE_FLAGS"
-        fi
-    else
-        if [ "$CUML_PROFILE" = true ]; then
-            # Only cuml.accel profiling
-            CMD="python -m cuml.accel --profile $BENCHMARK_SCRIPT --datasets $dataset --experiment-name $EXPERIMENT_NAME$PROFILE_FLAGS"
-        else
-            # No profiling
-            CMD="python -m cuml.accel $BENCHMARK_SCRIPT --datasets $dataset --experiment-name $EXPERIMENT_NAME$PROFILE_FLAGS"
-        fi
+        CMD="$CMD -m cProfile -o $PROFILE_FILE"
     fi
+
+    # Add cuml.accel module if GPU mode (NUM_GPUS != 0)
+    if [ "$NUM_GPUS" != "0" ]; then
+        CMD="$CMD -m cuml.accel"
+        [ "$CUML_PROFILE" = true ] && CMD="$CMD --profile"
+    fi
+
+    # Add script path
+    CMD="$CMD $BENCHMARK_SCRIPT"
+
+    # Add script arguments
+    CMD="$CMD --datasets $dataset --experiment-name $EXPERIMENT_NAME"
+    [ -n "$NUM_GPUS" ] && CMD="$CMD --num-gpus $NUM_GPUS"
 
     echo "Running: $CMD"
     eval "$CMD" 2>&1 | tee "$OUTPUT_FILE"

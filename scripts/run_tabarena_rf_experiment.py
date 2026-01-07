@@ -19,6 +19,31 @@ from benchmark_timer import BenchmarkTimer
 from benchmark_db import save_experiment_results
 
 
+def detect_profiling_modes() -> dict[str, bool]:
+    """Detect active profiling modes by inspecting sys.modules."""
+    # cProfile is active if module is loaded and a profiler function is set
+    cprofile_active = "cProfile" in sys.modules and sys.getprofile() is not None
+
+    # cuml.accel is active if the module is loaded
+    cuml_accel_active = "cuml.accel" in sys.modules
+
+    # Detect cuml.accel --profile mode by checking internal profiler state
+    cuml_accel_profile = False
+    if cuml_accel_active:
+        try:
+            from cuml.accel import profiler
+
+            cuml_accel_profile = getattr(profiler, "_profiling", False)
+        except (ImportError, AttributeError):
+            pass
+
+    return {
+        "cprofile": cprofile_active,
+        "cuml_accel": cuml_accel_active,
+        "cuml_accel_profile": cuml_accel_profile,
+    }
+
+
 @click.command()
 @click.option(
     "--datasets",
@@ -69,18 +94,6 @@ from benchmark_db import save_experiment_results
     help="Number of GPUs to use for training. If not provided, uses AutoGluon defaults. Set to 0 to run on CPU only.",
     show_default=True,
 )
-@click.option(
-    "--cuml-profile/--no-cuml-profile",
-    default=False,
-    help="Whether cuml.accel profiling is enabled.",
-    show_default=True,
-)
-@click.option(
-    "--cprofile/--no-cprofile",
-    default=False,
-    help="Whether cProfile profiling is enabled.",
-    show_default=True,
-)
 def main(
     datasets: str,
     experiment_name: str,
@@ -89,20 +102,21 @@ def main(
     ignore_cache: bool,
     skip_db_save: bool,
     num_gpus: int | None,
-    cuml_profile: bool,
-    cprofile: bool,
 ) -> None:
     """Run cuML-accelerated TabArena benchmarks with Random Forest model."""
+    # Detect profiling modes
+    profiling_modes = detect_profiling_modes()
+
     # Initialize timer for benchmarking (collects environment metadata)
     timer = BenchmarkTimer(
         experiment_name=experiment_name,
         metadata={
+            "argv": sys.argv,
+            "profiling": profiling_modes,
             "time_limit": time_limit,
             "num_bag_folds": num_bag_folds,
             "ignore_cache": ignore_cache,
             "num_gpus": num_gpus,
-            "cuml_profile": cuml_profile,
-            "cprofile": cprofile,
         },
     )
 
