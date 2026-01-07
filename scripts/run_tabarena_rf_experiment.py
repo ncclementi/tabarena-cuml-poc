@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
+
+# Add scripts directory to path for local module imports
+sys.path.insert(0, str(Path(__file__).parent))
 
 import click
 import pandas as pd
@@ -10,6 +14,9 @@ from tabarena.benchmark.experiment import AGModelBagExperiment, ExperimentBatchR
 from tabarena.nips2025_utils.end_to_end import EndToEnd
 from tabarena.nips2025_utils.tabarena_context import TabArenaContext
 from bencheval.website_format import format_leaderboard
+
+from benchmark_timer import BenchmarkTimer
+from benchmark_db import save_experiment_results
 
 
 @click.command()
@@ -48,80 +55,146 @@ from bencheval.website_format import format_leaderboard
     help="Whether to ignore existing caches and re-run experiments from scratch.",
     show_default=True,
 )
+@click.option(
+    "--skip-db-save",
+    is_flag=True,
+    default=False,
+    help="Skip saving results to the SQLite database.",
+    show_default=True,
+)
+@click.option(
+    "--num-gpus",
+    type=int,
+    default=None,
+    help="Number of GPUs to use for training. If not provided, uses AutoGluon defaults. Set to 0 to run on CPU only.",
+    show_default=True,
+)
+@click.option(
+    "--cuml-profile/--no-cuml-profile",
+    default=False,
+    help="Whether cuml.accel profiling is enabled.",
+    show_default=True,
+)
+@click.option(
+    "--cprofile/--no-cprofile",
+    default=False,
+    help="Whether cProfile profiling is enabled.",
+    show_default=True,
+)
 def main(
     datasets: str,
     experiment_name: str,
     time_limit: int,
     num_bag_folds: int,
     ignore_cache: bool,
+    skip_db_save: bool,
+    num_gpus: int | None,
+    cuml_profile: bool,
+    cprofile: bool,
 ) -> None:
     """Run cuML-accelerated TabArena benchmarks with Random Forest model."""
-    expname = str(
-        Path(__file__).parent / "experiments" / "quickstart"
-    )  # folder location to save all experiment artifacts
-    eval_dir = Path(__file__).parent / "eval" / "quickstart"
-
-    tabarena_context = TabArenaContext()
-    task_metadata = tabarena_context.task_metadata
-
-    # Parse comma-separated datasets
-    dataset_list = [d.strip() for d in datasets.split(",")]
-
-    folds = [0]
-
-    # import your model classes
-    from autogluon.tabular.models import RFModel
-
-    # This list of methods will be fit sequentially on each task (dataset x fold)
-    methods = [
-        # This will be a `config` in EvaluationRepository, because it computes out-of-fold predictions and thus can be used for post-hoc ensemble.
-        AGModelBagExperiment(  # Wrapper for fitting a single bagged model via AutoGluon
-            # The name you want the config to have
-            name=experiment_name,
-            # The class of the model. Can also be a string if AutoGluon recognizes it, such as `"GBM"`
-            # Supports any model that inherits from `autogluon.core.models.AbstractModel`
-            model_cls=RFModel,
-            model_hyperparameters={
-                "random_state": None,
-                "ag.ens.use_child_oof": False,
-                "ag_args_ensemble": {
-                    "fold_fitting_strategy": "sequential_local",
-                },  # uncomment to fit folds sequentially, allowing for use of a debugger
-                # "ag_args_fit": {"num_gpus": 0},  # uncomment to run on cpu
-            },
-            # The non-default model hyperparameters.
-            num_bag_folds=num_bag_folds,
-            time_limit=time_limit,
-        ),
-    ]
-
-    exp_batch_runner = ExperimentBatchRunner(
-        expname=expname, task_metadata=task_metadata
+    # Initialize timer for benchmarking (collects environment metadata)
+    timer = BenchmarkTimer(
+        experiment_name=experiment_name,
+        metadata={
+            "time_limit": time_limit,
+            "num_bag_folds": num_bag_folds,
+            "ignore_cache": ignore_cache,
+            "num_gpus": num_gpus,
+            "cuml_profile": cuml_profile,
+            "cprofile": cprofile,
+        },
     )
+
+    with timer.time("experiment_setup"):
+        expname = str(
+            Path(__file__).parent / "experiments" / "quickstart"
+        )  # folder location to save all experiment artifacts
+        eval_dir = Path(__file__).parent / "eval" / "quickstart"
+
+        tabarena_context = TabArenaContext()
+        task_metadata = tabarena_context.task_metadata
+
+        # Parse comma-separated datasets
+        dataset_list = [d.strip() for d in datasets.split(",")]
+
+        folds = [0]
+
+        # import your model classes
+        from autogluon.tabular.models import RFModel
+
+        # Build model hyperparameters
+        model_hyperparameters = {
+            "random_state": None,
+            "ag.ens.use_child_oof": False,
+            "ag_args_ensemble": {
+                "fold_fitting_strategy": "sequential_local",
+            },  # fit folds sequentially, allowing for use of a debugger
+        }
+        # Only add ag_args_fit if num_gpus is explicitly provided
+        if num_gpus is not None:
+            model_hyperparameters["ag_args_fit"] = {"num_gpus": num_gpus}
+
+        # This list of methods will be fit sequentially on each task (dataset x fold)
+        methods = [
+            # This will be a `config` in EvaluationRepository, because it computes out-of-fold predictions and thus can be used for post-hoc ensemble.
+            AGModelBagExperiment(  # Wrapper for fitting a single bagged model via AutoGluon
+                # The name you want the config to have
+                name=experiment_name,
+                # The class of the model. Can also be a string if AutoGluon recognizes it, such as `"GBM"`
+                # Supports any model that inherits from `autogluon.core.models.AbstractModel`
+                model_cls=RFModel,
+                model_hyperparameters=model_hyperparameters,
+                # The non-default model hyperparameters.
+                num_bag_folds=num_bag_folds,
+                time_limit=time_limit,
+            ),
+        ]
+
+        exp_batch_runner = ExperimentBatchRunner(
+            expname=expname, task_metadata=task_metadata
+        )
 
     # Get the run artifacts.
     # Fits each method on each task (datasets * folds)
-    results_lst: list[dict[str, Any]] = exp_batch_runner.run(
-        datasets=dataset_list,
-        folds=folds,
-        methods=methods,
-        ignore_cache=ignore_cache,
-    )
+    with timer.time("model_fit", metadata={"datasets": dataset_list, "folds": folds}):
+        results_lst: list[dict[str, Any]] = exp_batch_runner.run(
+            datasets=dataset_list,
+            folds=folds,
+            methods=methods,
+            ignore_cache=ignore_cache,
+        )
 
     # compute results
-    end_to_end = EndToEnd.from_raw(
-        results_lst=results_lst,
-        task_metadata=task_metadata,
-        cache=False,
-        cache_raw=False,
-    )
-    end_to_end_results = end_to_end.to_results()
+    with timer.time("evaluation"):
+        end_to_end = EndToEnd.from_raw(
+            results_lst=results_lst,
+            task_metadata=task_metadata,
+            cache=False,
+            cache_raw=False,
+        )
+        end_to_end_results = end_to_end.to_results()
 
     print(f"New Configs Hyperparameters: {end_to_end.configs_hyperparameters()}")
     with pd.option_context(
         "display.max_rows", None, "display.max_columns", None, "display.width", 1000
     ):
         print(f"Results:\n{end_to_end_results.model_results.head(100)}")
+
+    # Print timing summary
+    print("\n" + "=" * 60)
+    print("Benchmark Timing Summary:")
+    print("=" * 60)
+    print(timer.summary())
+    print("=" * 60 + "\n")
+
+    # Save results to SQLite database
+    if not skip_db_save:
+        save_experiment_results(
+            timer=timer,
+            results=end_to_end_results.model_results.to_dict(),
+            datasets=dataset_list,
+        )
 
     # compare_on_tabarena: Benchmarks your model against ~50 baseline models (LightGBM, XGBoost, LogisticRegression, etc.) by fitting ALL of them on your datasets
 
