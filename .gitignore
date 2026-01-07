@@ -1,3 +1,23 @@
 # Ignore third-party repositories (cloned by setup.sh into src/thirdparty/)
 src/thirdparty/
 
+# Ignore AutogluonModels and experiments folders
+AutogluonModels/
+experiments/
+
+# Ignore results_per_dataset and cprofiles_per_dataset folders
+results_per_dataset/
+cprofiles_per_dataset/
+
+# Ignore all SQLite databases
+*.db
+*.sqlite
+
+# Ignore .venv folder
+.venv/
+
+# Ignore Python's __pycache__ folder
+__pycache__/
+
+# Ignore std.out files
+*.out
