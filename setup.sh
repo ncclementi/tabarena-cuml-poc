@@ -49,7 +49,7 @@ THIRDPARTY_DIR="$SCRIPT_DIR/src/thirdparty"
 mkdir -p "$THIRDPARTY_DIR"
 
 # Commit hashes (set to empty string to use latest main/master)
-AUTOGLUON_COMMIT="c124491"  # Example: "abc123def456"
+AUTOGLUON_COMMIT="656a70d"
 TABARENA_COMMIT="aeff2d8"   # Example: "789ghi012jkl"
 # TREELITE_REPO="https://github.com/dmlc/treelite"
 TREELITE_REPO="https://github.com/dantegd/treelite.git"
