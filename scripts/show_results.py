@@ -20,6 +20,28 @@ from benchmark_db import (
 )
 
 
+def _parse_profiling_flags(df: pd.DataFrame) -> pd.DataFrame:
+    """Parse profiling flags from stage metadata columns.
+
+    Extracts profiling flags from direct columns:
+    - stage_metadata.cprofile -> profiling_cprofile
+    - stage_metadata.cuml_accel_profile -> profiling_cuml_accel_profile
+    """
+    df = df.copy()
+
+    # Initialize default values
+    df["profiling_cprofile"] = False
+    df["profiling_cuml_accel_profile"] = False
+
+    # Extract from direct columns (--metadata key=value format)
+    if "stage_metadata.cprofile" in df.columns:
+        df["profiling_cprofile"] = df["stage_metadata.cprofile"].fillna(False).astype(bool)
+    if "stage_metadata.cuml_accel_profile" in df.columns:
+        df["profiling_cuml_accel_profile"] = df["stage_metadata.cuml_accel_profile"].fillna(False).astype(bool)
+
+    return df
+
+
 @click.group()
 @click.option(
     "--db",
@@ -39,6 +61,38 @@ def cli(ctx, db_path: Path | None):
         ctx.exit(1)
 
 
+def _detect_cprofile_from_disk(experiment_name: str, datasets_json: str | None, db_path: Path) -> bool:
+    """Check if cProfile data exists on disk for the experiment.
+
+    cProfile files are stored in cprofiles/{experiment_id}/{dataset}.prof
+    where experiment_name is typically {experiment_id}_{dataset}.
+    """
+    if not experiment_name or not datasets_json:
+        return False
+
+    # Parse datasets from JSON
+    try:
+        datasets = json.loads(datasets_json)
+        if not datasets:
+            return False
+        dataset = datasets[0]  # Typically one dataset per run
+    except (json.JSONDecodeError, IndexError, TypeError):
+        return False
+
+    # Extract experiment_id from experiment_name (format: {experiment_id}_{dataset})
+    # The experiment_id is the part before the dataset name
+    if f"_{dataset}" in experiment_name:
+        experiment_id = experiment_name.rsplit(f"_{dataset}", 1)[0]
+    else:
+        # Fallback: use the whole experiment name
+        experiment_id = experiment_name
+
+    # Check if cprofile file exists
+    project_root = db_path.parent
+    cprofile_path = project_root / "cprofiles" / experiment_id / f"{dataset}.prof"
+    return cprofile_path.exists()
+
+
 @cli.command()
 @click.option("--experiment", "-e", default=None, help="Filter by experiment name")
 @click.option("--limit", "-n", default=20, type=int, help="Max rows to show")
@@ -52,15 +106,53 @@ def runs(ctx, experiment: str | None, limit: int, as_json: bool):
         click.echo("No benchmark runs found.")
         return
 
+    # Load timing data to get num_gpus and profiling flags
+    df_timings = load_benchmark_timings(experiment_name=experiment, db_path=ctx.obj["db_path"])
+
+    # Extract num_gpus and profiling flags from model_fit stage
+    if not df_timings.empty:
+        df_stage = df_timings[df_timings["stage"] == "model_fit"].copy()
+        df_stage = _parse_profiling_flags(df_stage)
+
+        # Rename num_gpus column if present
+        if "stage_metadata.num_gpus" in df_stage.columns:
+            df_stage = df_stage.rename(columns={"stage_metadata.num_gpus": "num_gpus"})
+
+        # Select columns to merge
+        merge_cols = ["run_id"]
+        if "num_gpus" in df_stage.columns:
+            merge_cols.append("num_gpus")
+        if "profiling_cprofile" in df_stage.columns:
+            merge_cols.append("profiling_cprofile")
+        if "profiling_cuml_accel_profile" in df_stage.columns:
+            merge_cols.append("profiling_cuml_accel_profile")
+
+        df_stage_subset = df_stage[merge_cols].drop_duplicates(subset=["run_id"])
+        df = df.merge(df_stage_subset, on="run_id", how="left")
+
+    # Detect cProfile from disk if not already set (external cProfile invocation)
+    db_path = ctx.obj["db_path"]
+    if "profiling_cprofile" not in df.columns:
+        df["profiling_cprofile"] = False
+    df["profiling_cprofile"] = df.apply(
+        lambda row: row.get("profiling_cprofile", False) or _detect_cprofile_from_disk(
+            row.get("experiment_name", ""),
+            row.get("datasets"),
+            db_path
+        ),
+        axis=1
+    )
+
     # Select key columns for display
     display_cols = [
         "run_id",
-        "experiment_name",
         "execution_datetime",
         "total_time_s",
         "datasets",
+        "num_gpus",
+        "profiling_cprofile",
+        "profiling_cuml_accel_profile",
         "system.hostname",
-        "cuda.cuda_device_count",
     ]
     available_cols = [c for c in display_cols if c in df.columns]
 
@@ -314,33 +406,6 @@ def results(ctx, run_id: str, as_json: bool):
                 click.echo(f"Raw results: {results_json[:500]}...")
         else:
             click.echo("No results data found for this run.")
-
-
-def _parse_profiling_flags(df: pd.DataFrame) -> pd.DataFrame:
-    """Parse profiling flags from stage_metadata.profiling JSON column.
-
-    Adds boolean columns: profiling_cprofile, profiling_cuml_accel_profile.
-    """
-    df = df.copy()
-    profiling_col = "stage_metadata.profiling"
-
-    df["profiling_cprofile"] = False
-    df["profiling_cuml_accel_profile"] = False
-
-    if profiling_col not in df.columns:
-        return df
-
-    for idx, value in df[profiling_col].items():
-        if pd.isna(value):
-            continue
-        try:
-            profiling = json.loads(value) if isinstance(value, str) else value
-            df.loc[idx, "profiling_cprofile"] = profiling.get("cprofile", False)
-            df.loc[idx, "profiling_cuml_accel_profile"] = profiling.get("cuml_accel_profile", False)
-        except (json.JSONDecodeError, TypeError, AttributeError):
-            pass
-
-    return df
 
 
 @cli.command()

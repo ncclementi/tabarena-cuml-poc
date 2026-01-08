@@ -19,29 +19,52 @@ from benchmark_timer import BenchmarkTimer
 from benchmark_db import save_experiment_results
 
 
-def detect_profiling_modes() -> dict[str, bool]:
-    """Detect active profiling modes by inspecting sys.modules."""
-    # cProfile is active if module is loaded and a profiler function is set
-    cprofile_active = "cProfile" in sys.modules and sys.getprofile() is not None
+def parse_extra_metadata(metadata_args: tuple[str, ...]) -> dict[str, Any]:
+    """Parse extra metadata from CLI key=value arguments.
 
-    # cuml.accel is active if the module is loaded
-    cuml_accel_active = "cuml.accel" in sys.modules
+    Parameters
+    ----------
+    metadata_args : tuple[str, ...]
+        Tuple of "key=value" strings from --metadata options.
 
-    # Detect cuml.accel --profile mode by checking internal profiler state
-    cuml_accel_profile = False
-    if cuml_accel_active:
-        try:
-            from cuml.accel import profiler
+    Returns
+    -------
+    dict[str, Any]
+        Parsed metadata dictionary with automatic type conversion:
+        - "true"/"false" -> bool
+        - numeric strings -> int or float
+        - everything else -> str
+    """
+    result: dict[str, Any] = {}
+    for arg in metadata_args:
+        if "=" not in arg:
+            # Skip malformed arguments
+            continue
+        key, value = arg.split("=", 1)
+        key = key.strip()
+        value = value.strip()
 
-            cuml_accel_profile = getattr(profiler, "_profiling", False)
-        except (ImportError, AttributeError):
-            pass
+        # Type conversion
+        if value.lower() == "true":
+            result[key] = True
+        elif value.lower() == "false":
+            result[key] = False
+        else:
+            # Try numeric conversion
+            try:
+                if "." in value:
+                    result[key] = float(value)
+                else:
+                    result[key] = int(value)
+            except ValueError:
+                result[key] = value
 
-    return {
-        "cprofile": cprofile_active,
-        "cuml_accel": cuml_accel_active,
-        "cuml_accel_profile": cuml_accel_profile,
-    }
+    return result
+
+
+def detect_cuml_accel_active() -> bool:
+    """Check if cuml.accel module is loaded."""
+    return "cuml.accel" in sys.modules
 
 
 @click.command()
@@ -94,6 +117,14 @@ def detect_profiling_modes() -> dict[str, bool]:
     help="Number of GPUs to use for training. If not provided, uses AutoGluon defaults. Set to 0 to run on CPU only.",
     show_default=True,
 )
+@click.option(
+    "--metadata",
+    "-m",
+    "extra_metadata",
+    multiple=True,
+    help="Extra metadata as key=value pairs. Can be specified multiple times. "
+         "Boolean values: true/false. Example: --metadata cprofile=true --metadata custom_key=value",
+)
 def main(
     datasets: str,
     experiment_name: str,
@@ -102,21 +133,26 @@ def main(
     ignore_cache: bool,
     skip_db_save: bool,
     num_gpus: int | None,
+    extra_metadata: tuple[str, ...],
 ) -> None:
     """Run cuML-accelerated TabArena benchmarks with Random Forest model."""
-    # Detect profiling modes
-    profiling_modes = detect_profiling_modes()
+    # Parse extra metadata from CLI
+    parsed_metadata = parse_extra_metadata(extra_metadata)
+
+    # Add runtime-detected cuml.accel status to metadata
+    parsed_metadata["cuml_accel"] = detect_cuml_accel_active()
 
     # Initialize timer for benchmarking (collects environment metadata)
+    # All CLI metadata is passed directly without special treatment
     timer = BenchmarkTimer(
         experiment_name=experiment_name,
         metadata={
             "argv": sys.argv,
-            "profiling": profiling_modes,
             "time_limit": time_limit,
             "num_bag_folds": num_bag_folds,
             "ignore_cache": ignore_cache,
             "num_gpus": num_gpus,
+            **parsed_metadata,  # Include all extra metadata directly
         },
     )
 
