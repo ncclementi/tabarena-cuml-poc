@@ -121,6 +121,39 @@ Additional options:
 ./scripts/show_results.py aggregate --json
 ```
 
+#### Computing GPU speedup
+
+The `speedup` command compares GPU timing against CPU baseline (num_gpus=0) to show performance differences:
+
+```bash
+./scripts/show_results.py speedup
+```
+
+Example output:
+```
+                                     datasets   rows   cols  num_gpus  baseline_train_s  speedup_train  baseline_infer_s  speedup_infer  count
+                               ["APSFailure"]  50666    170       1.0             23.70           2.15              0.67           1.00      1
+                                   ["anneal"]    598     38       1.0              3.22           1.23              0.39           1.42      1
+  ["customer_satisfaction_in_airline"]         86586     21       1.0             45.12           3.50              1.20           1.80      1
+```
+
+A speedup > 1 means the GPU run was faster than the CPU baseline. The command also displays dataset dimensions (rows, cols) to help correlate speedup with dataset size.
+
+Additional options:
+```bash
+# Use minimum instead of median for aggregation
+./scripts/show_results.py speedup --agg min
+
+# Filter by experiment name
+./scripts/show_results.py speedup -e my_experiment
+
+# Include profiled runs (excluded by default to avoid skewed results)
+./scripts/show_results.py speedup --include-profiled
+
+# Output as JSON
+./scripts/show_results.py speedup --json
+```
+
 #### Relationship between disk and database results
 
 The disk files (`results/`) contain the raw output for debugging and manual inspection, while the database (`benchmark_results.db`) stores the same data in a structured format for programmatic analysis. Both are created during the same benchmark run—the database is updated via `benchmark_db.save_experiment_results()` at the end of each experiment.
