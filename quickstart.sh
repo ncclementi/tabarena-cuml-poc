@@ -15,12 +15,8 @@ if ! python -c "from tabarena.benchmark.experiment import AGModelBagExperiment" 
     exit 1
 fi
 
-# Copy the quickstart script to the tabarena benchmarking directory
-cp "$SCRIPT_DIR/run_tabarena_rf_experiment.py" "$SCRIPT_DIR/tabarena/examples/benchmarking/"
-
-# Run the quickstart with cuML acceleration
-cd "$SCRIPT_DIR/tabarena/examples/benchmarking"
-python -m cuml.accel run_tabarena_rf_experiment.py
+# Run the tabarena rf experiment with cuML acceleration
+python -m cuml.accel "$SCRIPT_DIR/scripts/run_tabarena_rf_experiment.py"
 
 # Return to original directory
 cd "$SCRIPT_DIR"
