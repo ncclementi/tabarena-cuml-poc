@@ -461,5 +461,168 @@ def aggregate(ctx, experiment: str | None, stage: str, as_json: bool, include_pr
             click.echo(df_agg.to_string(index=False))
 
 
+# Known dataset sizes from OpenML (rows, columns)
+DATASET_SIZES = {
+    '["anneal"]': (598, 38),
+    '["APSFailure"]': (50666, 170),
+    '["credit-g"]': (666, 20),
+    '["customer_satisfaction_in_airline"]': (86586, 21),
+    '["diabetes"]': (512, 8),
+}
+
+
+@cli.command()
+@click.option("--experiment", "-e", default=None, help="Filter by experiment name")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.option(
+    "--include-profiled",
+    is_flag=True,
+    default=False,
+    help="Include runs with cProfile or cuml.accel profiling enabled (excluded by default).",
+)
+@click.pass_context
+def speedup(ctx, experiment: str | None, as_json: bool, include_profiled: bool):
+    """Compare GPU timing speedup against CPU baseline (num_gpus=0).
+
+    Shows speedup ratios for time_train_s and time_infer_s from model results,
+    grouped by dataset and GPU count. A speedup > 1 means the GPU is faster.
+
+    By default, runs with cProfile or cuml.accel --profile enabled are excluded
+    to avoid skewed timing results. Use --include-profiled to include them.
+    """
+    # Load runs and timings
+    df_runs = load_benchmark_runs(experiment_name=experiment, db_path=ctx.obj["db_path"])
+    df_timings = load_benchmark_timings(experiment_name=experiment, db_path=ctx.obj["db_path"])
+
+    if df_runs.empty or df_timings.empty:
+        click.echo("No benchmark data found.")
+        return
+
+    # Use model_fit stage for filtering profiled runs and getting num_gpus
+    df_stage = df_timings[df_timings["stage"] == "model_fit"].copy()
+
+    # Filter out profiled runs unless explicitly included
+    if not include_profiled:
+        df_stage = _parse_profiling_flags(df_stage)
+        profiled_mask = df_stage["profiling_cprofile"] | df_stage["profiling_cuml_accel_profile"]
+        excluded_count = profiled_mask.sum()
+        df_stage = df_stage[~profiled_mask]
+
+        if excluded_count > 0:
+            click.echo(f"Note: Excluded {excluded_count} profiled run(s). Use --include-profiled to include them.")
+
+    if df_stage.empty:
+        click.echo("No timing data found.")
+        return
+
+    # Use num_gpus from stage_metadata (experiment config), rename for clarity
+    if "stage_metadata.num_gpus" in df_stage.columns:
+        df_stage = df_stage.rename(columns={"stage_metadata.num_gpus": "num_gpus"})
+
+    if "num_gpus" not in df_stage.columns:
+        click.echo("No num_gpus data found in timing metadata.")
+        return
+
+    # Extract time_train_s and time_infer_s from results_json
+    results_data = []
+    for _, row in df_runs.iterrows():
+        results_json = row.get("results_json")
+        if results_json:
+            try:
+                results_dict = json.loads(results_json)
+                time_train_values = results_dict.get("time_train_s", {})
+                time_infer_values = results_dict.get("time_infer_s", {})
+                for idx in time_train_values.keys():
+                    results_data.append({
+                        "run_id": row["run_id"],
+                        "time_train_s": time_train_values.get(idx),
+                        "time_infer_s": time_infer_values.get(idx),
+                    })
+            except (json.JSONDecodeError, ValueError, TypeError):
+                pass
+
+    if not results_data:
+        click.echo("No model results data found.")
+        return
+
+    df_results = pd.DataFrame(results_data)
+
+    # Merge with runs to get datasets, and with stage to get num_gpus
+    df_runs_subset = df_runs[["run_id", "datasets"]].copy()
+    df_stage_subset = df_stage[["run_id", "num_gpus"]].copy()
+
+    df_merged = df_results.merge(df_runs_subset, on="run_id", how="left")
+    df_merged = df_merged.merge(df_stage_subset, on="run_id", how="left")
+
+    # Group by datasets and num_gpus, compute median
+    df_agg = (
+        df_merged.groupby(["datasets", "num_gpus"], dropna=False)
+        .agg(
+            median_time_train_s=("time_train_s", "median"),
+            median_time_infer_s=("time_infer_s", "median"),
+            count=("time_train_s", "count"),
+        )
+        .reset_index()
+    )
+
+    # Extract baseline (num_gpus == 0) timing for each dataset
+    df_baseline = df_agg[df_agg["num_gpus"] == 0][["datasets", "median_time_train_s", "median_time_infer_s"]].copy()
+    df_baseline = df_baseline.rename(columns={
+        "median_time_train_s": "baseline_train_s",
+        "median_time_infer_s": "baseline_infer_s",
+    })
+
+    if df_baseline.empty:
+        click.echo("No baseline (num_gpus=0) data found. Cannot compute speedup.")
+        return
+
+    # Merge baseline timing back to all rows
+    df_speedup = df_agg.merge(df_baseline, on="datasets", how="left")
+
+    # Calculate speedup (baseline / gpu_time)
+    df_speedup["speedup_train"] = df_speedup["baseline_train_s"] / df_speedup["median_time_train_s"]
+    df_speedup["speedup_infer"] = df_speedup["baseline_infer_s"] / df_speedup["median_time_infer_s"]
+
+    # Filter out baseline rows (speedup would always be 1.0)
+    df_speedup = df_speedup[df_speedup["num_gpus"] != 0].copy()
+
+    if df_speedup.empty:
+        click.echo("No GPU runs found to compare against baseline.")
+        return
+
+    # Add dataset size information
+    df_speedup["rows"] = df_speedup["datasets"].map(lambda x: DATASET_SIZES.get(x, (None, None))[0])
+    df_speedup["cols"] = df_speedup["datasets"].map(lambda x: DATASET_SIZES.get(x, (None, None))[1])
+
+    # Sort by datasets and num_gpus
+    df_speedup = df_speedup.sort_values(["datasets", "num_gpus"])
+
+    # Rename for display
+    df_speedup = df_speedup.rename(columns={
+        "median_time_train_s": "time_train_s",
+        "median_time_infer_s": "time_infer_s",
+    })
+
+    # Select columns for display
+    display_cols = [
+        "datasets", "rows", "cols", "num_gpus",
+        "baseline_train_s", "speedup_train",
+        "baseline_infer_s", "speedup_infer",
+        "count",
+    ]
+    df_display = df_speedup[display_cols]
+
+    if as_json:
+        click.echo(df_display.to_json(orient="records", indent=2))
+    else:
+        with pd.option_context(
+            "display.max_columns", None,
+            "display.width", 250,
+            "display.max_colwidth", 50,
+            "display.float_format", "{:.2f}".format,
+        ):
+            click.echo(df_display.to_string(index=False))
+
+
 if __name__ == "__main__":
     cli()
