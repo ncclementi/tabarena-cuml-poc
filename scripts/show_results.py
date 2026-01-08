@@ -246,5 +246,220 @@ def query(ctx, table_name: str, limit: int):
     click.echo(f"\nColumns: {', '.join(df.columns.tolist())}")
 
 
+@cli.command()
+@click.argument("run_id")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.pass_context
+def results(ctx, run_id: str, as_json: bool):
+    """Show model results for a specific run.
+
+    RUN_ID can be a partial match (prefix).
+    Displays the model results stored from end_to_end_results.model_results.
+    """
+    df = load_benchmark_runs(db_path=ctx.obj["db_path"])
+
+    if df.empty:
+        click.echo("No benchmark runs found.")
+        return
+
+    # Filter by run_id prefix
+    mask = df["run_id"].str.startswith(run_id)
+    df_filtered = df[mask]
+
+    if df_filtered.empty:
+        click.echo(f"No run found with run_id starting with '{run_id}'")
+        return
+
+    if len(df_filtered) > 1:
+        click.echo(f"Multiple runs match '{run_id}'. Please be more specific:")
+        for rid in df_filtered["run_id"].tolist():
+            click.echo(f"  - {rid}")
+        return
+
+    row = df_filtered.iloc[0]
+
+    # Get datasets and results_json
+    datasets = row.get("datasets", "N/A")
+    results_json = row.get("results_json", None)
+
+    if as_json:
+        output = {
+            "run_id": row["run_id"],
+            "experiment_name": row.get("experiment_name", "N/A"),
+            "datasets": json.loads(datasets) if datasets and datasets != "N/A" else None,
+            "results": json.loads(results_json) if results_json else None,
+        }
+        click.echo(json.dumps(output, indent=2, default=str))
+    else:
+        click.echo(f"Run ID: {row['run_id']}")
+        click.echo(f"Experiment: {row.get('experiment_name', 'N/A')}")
+        click.echo(f"Datasets: {datasets}")
+        click.echo("=" * 60)
+
+        if results_json:
+            try:
+                results_dict = json.loads(results_json)
+                # Convert to DataFrame for nice display
+                df_results = pd.DataFrame(results_dict)
+                with pd.option_context(
+                    "display.max_rows", None,
+                    "display.max_columns", None,
+                    "display.width", 200,
+                    "display.max_colwidth", 50,
+                ):
+                    click.echo("Model Results:")
+                    click.echo(df_results.to_string())
+            except (json.JSONDecodeError, ValueError) as e:
+                click.echo(f"Error parsing results: {e}")
+                click.echo(f"Raw results: {results_json[:500]}...")
+        else:
+            click.echo("No results data found for this run.")
+
+
+def _parse_profiling_flags(df: pd.DataFrame) -> pd.DataFrame:
+    """Parse profiling flags from stage_metadata.profiling JSON column.
+
+    Adds boolean columns: profiling_cprofile, profiling_cuml_accel_profile.
+    """
+    df = df.copy()
+    profiling_col = "stage_metadata.profiling"
+
+    df["profiling_cprofile"] = False
+    df["profiling_cuml_accel_profile"] = False
+
+    if profiling_col not in df.columns:
+        return df
+
+    for idx, value in df[profiling_col].items():
+        if pd.isna(value):
+            continue
+        try:
+            profiling = json.loads(value) if isinstance(value, str) else value
+            df.loc[idx, "profiling_cprofile"] = profiling.get("cprofile", False)
+            df.loc[idx, "profiling_cuml_accel_profile"] = profiling.get("cuml_accel_profile", False)
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            pass
+
+    return df
+
+
+@cli.command()
+@click.option("--experiment", "-e", default=None, help="Filter by experiment name")
+@click.option("--stage", "-s", default="model_fit", help="Timing stage to aggregate (default: model_fit)")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.option(
+    "--include-profiled",
+    is_flag=True,
+    default=False,
+    help="Include runs with cProfile or cuml.accel profiling enabled (excluded by default).",
+)
+@click.pass_context
+def aggregate(ctx, experiment: str | None, stage: str, as_json: bool, include_profiled: bool):
+    """Aggregate timing results across multiple runs using median.
+
+    Shows median timing for the specified stage grouped by dataset and GPU count.
+    Also includes median time_train_s and time_infer_s from model results.
+
+    By default, runs with cProfile or cuml.accel --profile enabled are excluded
+    to avoid skewed timing results. Use --include-profiled to include them.
+    """
+    # Load runs and timings
+    df_runs = load_benchmark_runs(experiment_name=experiment, db_path=ctx.obj["db_path"])
+    df_timings = load_benchmark_timings(experiment_name=experiment, db_path=ctx.obj["db_path"])
+
+    if df_runs.empty or df_timings.empty:
+        click.echo("No benchmark data found.")
+        return
+
+    # Filter timings for the specified stage
+    df_stage = df_timings[df_timings["stage"] == stage].copy()
+
+    # Filter out profiled runs unless explicitly included
+    if not include_profiled:
+        df_stage = _parse_profiling_flags(df_stage)
+        profiled_mask = df_stage["profiling_cprofile"] | df_stage["profiling_cuml_accel_profile"]
+        excluded_count = profiled_mask.sum()
+        df_stage = df_stage[~profiled_mask]
+
+        if excluded_count > 0:
+            click.echo(f"Note: Excluded {excluded_count} profiled run(s). Use --include-profiled to include them.")
+
+    if df_stage.empty:
+        click.echo(f"No timing data found for stage '{stage}'.")
+        return
+
+    # Use num_gpus from stage_metadata (experiment config), rename for clarity
+    if "stage_metadata.num_gpus" in df_stage.columns:
+        df_stage = df_stage.rename(columns={"stage_metadata.num_gpus": "num_gpus"})
+
+    # Extract time_train_s and time_infer_s from results_json
+    results_data = []
+    for _, row in df_runs.iterrows():
+        results_json = row.get("results_json")
+        if results_json:
+            try:
+                results_dict = json.loads(results_json)
+                # results_dict is in column-oriented format, extract values
+                time_train_values = results_dict.get("time_train_s", {})
+                time_infer_values = results_dict.get("time_infer_s", {})
+                # Each key is a row index, get all values
+                for idx in time_train_values.keys():
+                    results_data.append({
+                        "run_id": row["run_id"],
+                        "time_train_s": time_train_values.get(idx),
+                        "time_infer_s": time_infer_values.get(idx),
+                    })
+            except (json.JSONDecodeError, ValueError, TypeError):
+                pass
+
+    df_results = pd.DataFrame(results_data) if results_data else pd.DataFrame()
+
+    # Merge with runs to get datasets
+    df_runs_subset = df_runs[["run_id", "datasets"]].copy()
+    df_merged = df_stage.merge(df_runs_subset, on="run_id", how="left")
+
+    # Merge results timing data
+    if not df_results.empty:
+        df_merged = df_merged.merge(df_results, on="run_id", how="left")
+
+    # Determine groupby columns based on what's available
+    groupby_cols = ["datasets"]
+    if "num_gpus" in df_merged.columns:
+        groupby_cols.append("num_gpus")
+
+    # Build aggregation dict
+    agg_dict = {
+        "median_time_s": ("time_s", "median"),
+        "count": ("time_s", "count"),
+    }
+    if "time_train_s" in df_merged.columns:
+        agg_dict["median_time_train_s"] = ("time_train_s", "median")
+    if "time_infer_s" in df_merged.columns:
+        agg_dict["median_time_infer_s"] = ("time_infer_s", "median")
+
+    # Group by datasets and num_gpus, compute median
+    df_agg = (
+        df_merged.groupby(groupby_cols, dropna=False)
+        .agg(**agg_dict)
+        .reset_index()
+    )
+
+    # Sort by datasets
+    df_agg = df_agg.sort_values("datasets")
+
+    # Rename for display
+    df_agg = df_agg.rename(columns={"median_time_s": f"{stage}_time_s"})
+
+    if as_json:
+        click.echo(df_agg.to_json(orient="records", indent=2))
+    else:
+        with pd.option_context(
+            "display.max_columns", None,
+            "display.width", 200,
+            "display.max_colwidth", 50,
+        ):
+            click.echo(df_agg.to_string(index=False))
+
+
 if __name__ == "__main__":
     cli()

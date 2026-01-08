@@ -39,19 +39,92 @@ To test cuML-accelerated estimators with TabArena, run the quickstart script:
 This will run the cuML Random Forest benchmark on a few small datasets.
 You can modify the script to experiment with other models or datasets as needed.
 
-### Create profiles
+### Running benchmarks
 
-Generate cuml.accel profiles with:
-
-```bash
-./run_datasets_cuml_prof.sh
-```
-
-Generate cProfiles with:
+Run benchmarks on multiple datasets using the `run_datasets.sh` script:
 
 ```bash
-./run_datasets_cprofile.sh
+# Run without profiling (GPU-accelerated by default if GPUs are present)
+./run_datasets.sh
+
+# Run with cuml.accel profiling
+./run_datasets.sh --cuml-profile
+
+# Run with cProfile profiling
+./run_datasets.sh --cprofile
+
+# Run with both profiling modes
+./run_datasets.sh --cuml-profile --cprofile
+
+# Run on CPU only (no cuml.accel)
+./run_datasets.sh --num-gpus 0
+
+# Use a custom experiment ID
+./run_datasets.sh --experiment-id my_experiment_001
 ```
+
+Results are saved to `results/<experiment-id>/` and cProfile files (when enabled) to `cprofiles/<experiment-id>/`.
+
+### Show benchmark results
+
+Benchmark results are stored in two locations:
+
+1. **On disk** (`results/<experiment-id>/`): Raw output files for each dataset
+   - `<dataset>_output.txt` - Full console output from the benchmark run
+   - `<dataset>_results.txt` - Extracted results section (metrics and timing)
+
+2. **SQLite database** (`benchmark_results.db`): Structured data for analysis
+   - `benchmark_runs` table - One row per run with metadata, config, and results JSON
+   - `benchmark_timings` table - Detailed timing breakdown per stage
+
+Use `scripts/show_results.py` to query and analyze results from the database:
+
+```bash
+# List all benchmark runs
+./scripts/show_results.py runs
+
+# Show results for a specific run (partial run_id prefix works)
+./scripts/show_results.py results 23eccace
+
+# Show timing breakdown for a run
+./scripts/show_results.py timings 23eccace
+
+# Show full metadata for a run
+./scripts/show_results.py info 23eccace
+```
+
+#### Aggregating results across runs
+
+The `aggregate` command computes median timings grouped by dataset and GPU count, making it easy to compare CPU vs GPU performance:
+
+```bash
+./scripts/show_results.py aggregate
+```
+
+Example output:
+```
+                            datasets  num_gpus  model_fit_time_s  count  median_time_train_s  median_time_infer_s
+                      ["APSFailure"]       0.0         28.175330      1            23.699634             0.667471
+                      ["APSFailure"]       1.0         17.705651      1            10.998923             0.668610
+                          ["anneal"]       0.0          6.633581      1             3.224594             0.393610
+                          ["anneal"]       1.0          6.279709      1             2.617248             0.276223
+```
+
+The `num_gpus` column shows results for CPU-only runs (`0.0`), GPU runs (`1.0`, `2.0`), and when no "num_gpus" argument was provided (`NaN`). This allows you to quickly see the speedup achieved by GPU acceleration.
+
+Additional options:
+```bash
+# Filter by experiment name
+./scripts/show_results.py aggregate -e my_experiment
+
+# Output as JSON
+./scripts/show_results.py aggregate --json
+```
+
+#### Relationship between disk and database results
+
+The disk files (`results/`) contain the raw output for debugging and manual inspection, while the database (`benchmark_results.db`) stores the same data in a structured format for programmatic analysis. Both are created during the same benchmark run—the database is updated via `benchmark_db.save_experiment_results()` at the end of each experiment.
+
 
 ## TODO: 
 - [x] Setup script to install everything in a reproducible way using uv 
