@@ -117,6 +117,8 @@ def runs(ctx, experiment: str | None, limit: int, as_json: bool):
         # Rename num_gpus column if present
         if "stage_metadata.num_gpus" in df_stage.columns:
             df_stage = df_stage.rename(columns={"stage_metadata.num_gpus": "num_gpus"})
+            # Convert to numeric (may be stored as string due to SQLite/pandas type handling)
+            df_stage["num_gpus"] = pd.to_numeric(df_stage["num_gpus"], errors="coerce")
 
         # Select columns to merge
         merge_cols = ["run_id"]
@@ -456,6 +458,8 @@ def aggregate(ctx, experiment: str | None, stage: str, as_json: bool, include_pr
     # Use num_gpus from stage_metadata (experiment config), rename for clarity
     if "stage_metadata.num_gpus" in df_stage.columns:
         df_stage = df_stage.rename(columns={"stage_metadata.num_gpus": "num_gpus"})
+        # Convert to numeric (may be stored as string due to SQLite/pandas type handling)
+        df_stage["num_gpus"] = pd.to_numeric(df_stage["num_gpus"], errors="coerce")
 
     # Extract time_train_s and time_infer_s from results_json
     results_data = []
@@ -587,6 +591,9 @@ def speedup(ctx, experiment: str | None, as_json: bool, include_profiled: bool):
     if "num_gpus" not in df_stage.columns:
         click.echo("No num_gpus data found in timing metadata.")
         return
+
+    # Convert num_gpus to numeric (may be stored as string due to SQLite/pandas type handling)
+    df_stage["num_gpus"] = pd.to_numeric(df_stage["num_gpus"], errors="coerce")
 
     # Extract time_train_s and time_infer_s from results_json
     results_data = []
