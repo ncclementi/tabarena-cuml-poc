@@ -479,8 +479,14 @@ def results(ctx, run_id: str, as_json: bool):
     default=False,
     help="Don't infer num_gpus from cuda_device_count when num_gpus is not set.",
 )
+@click.option(
+    "--agg",
+    type=click.Choice(["median", "min"]),
+    default="median",
+    help="Aggregation method for timing results (default: median).",
+)
 @click.pass_context
-def aggregate(ctx, experiment: str | None, stage: str, as_json: bool, include_profiled: bool, no_infer_gpu_count: bool):
+def aggregate(ctx, experiment: str | None, stage: str, as_json: bool, include_profiled: bool, no_infer_gpu_count: bool, agg: str):
     """Aggregate timing results across multiple runs using median.
 
     Shows median timing for the specified stage grouped by dataset and GPU count.
@@ -561,13 +567,13 @@ def aggregate(ctx, experiment: str | None, stage: str, as_json: bool, include_pr
 
     # Build aggregation dict
     agg_dict = {
-        "median_time_s": ("time_s", "median"),
+        f"{agg}_time_s": ("time_s", agg),
         "count": ("time_s", "count"),
     }
     if "time_train_s" in df_merged.columns:
-        agg_dict["median_time_train_s"] = ("time_train_s", "median")
+        agg_dict[f"{agg}_time_train_s"] = ("time_train_s", agg)
     if "time_infer_s" in df_merged.columns:
-        agg_dict["median_time_infer_s"] = ("time_infer_s", "median")
+        agg_dict[f"{agg}_time_infer_s"] = ("time_infer_s", agg)
 
     # Group by datasets and num_gpus, compute median
     df_agg = (
@@ -580,7 +586,7 @@ def aggregate(ctx, experiment: str | None, stage: str, as_json: bool, include_pr
     df_agg = df_agg.sort_values("datasets")
 
     # Rename for display
-    df_agg = df_agg.rename(columns={"median_time_s": f"{stage}_time_s"})
+    df_agg = df_agg.rename(columns={f"{agg}_time_s": f"{stage}_time_s"})
 
     if as_json:
         click.echo(df_agg.to_json(orient="records", indent=2))
@@ -618,8 +624,14 @@ DATASET_SIZES = {
     default=False,
     help="Don't infer num_gpus from cuda_device_count when num_gpus is not set.",
 )
+@click.option(
+    "--agg",
+    type=click.Choice(["median", "min"]),
+    default="median",
+    help="Aggregation method for timing results (default: median).",
+)
 @click.pass_context
-def speedup(ctx, experiment: str | None, as_json: bool, include_profiled: bool, no_infer_gpu_count: bool):
+def speedup(ctx, experiment: str | None, as_json: bool, include_profiled: bool, no_infer_gpu_count: bool, agg: str):
     """Compare GPU timing speedup against CPU baseline (num_gpus=0).
 
     Shows speedup ratios for time_train_s and time_infer_s from model results,
@@ -700,22 +712,22 @@ def speedup(ctx, experiment: str | None, as_json: bool, include_profiled: bool, 
     df_merged = df_results.merge(df_runs_subset, on="run_id", how="left")
     df_merged = df_merged.merge(df_stage_subset, on="run_id", how="inner")
 
-    # Group by datasets and num_gpus, compute median
+    # Group by datasets and num_gpus, compute aggregate
     df_agg = (
         df_merged.groupby(["datasets", "num_gpus"], dropna=False)
         .agg(
-            median_time_train_s=("time_train_s", "median"),
-            median_time_infer_s=("time_infer_s", "median"),
+            agg_time_train_s=("time_train_s", agg),
+            agg_time_infer_s=("time_infer_s", agg),
             count=("time_train_s", "count"),
         )
         .reset_index()
     )
 
     # Extract baseline (num_gpus == 0) timing for each dataset
-    df_baseline = df_agg[df_agg["num_gpus"] == 0][["datasets", "median_time_train_s", "median_time_infer_s"]].copy()
+    df_baseline = df_agg[df_agg["num_gpus"] == 0][["datasets", "agg_time_train_s", "agg_time_infer_s"]].copy()
     df_baseline = df_baseline.rename(columns={
-        "median_time_train_s": "baseline_train_s",
-        "median_time_infer_s": "baseline_infer_s",
+        "agg_time_train_s": "baseline_train_s",
+        "agg_time_infer_s": "baseline_infer_s",
     })
 
     if df_baseline.empty:
@@ -726,8 +738,8 @@ def speedup(ctx, experiment: str | None, as_json: bool, include_profiled: bool, 
     df_speedup = df_agg.merge(df_baseline, on="datasets", how="left")
 
     # Calculate speedup (baseline / gpu_time)
-    df_speedup["speedup_train"] = df_speedup["baseline_train_s"] / df_speedup["median_time_train_s"]
-    df_speedup["speedup_infer"] = df_speedup["baseline_infer_s"] / df_speedup["median_time_infer_s"]
+    df_speedup["speedup_train"] = df_speedup["baseline_train_s"] / df_speedup["agg_time_train_s"]
+    df_speedup["speedup_infer"] = df_speedup["baseline_infer_s"] / df_speedup["agg_time_infer_s"]
 
     # Filter out baseline rows (speedup would always be 1.0)
     df_speedup = df_speedup[df_speedup["num_gpus"] != 0].copy()
@@ -745,8 +757,8 @@ def speedup(ctx, experiment: str | None, as_json: bool, include_profiled: bool, 
 
     # Rename for display
     df_speedup = df_speedup.rename(columns={
-        "median_time_train_s": "time_train_s",
-        "median_time_infer_s": "time_infer_s",
+        "agg_time_train_s": "time_train_s",
+        "agg_time_infer_s": "time_infer_s",
     })
 
     # Select columns for display
