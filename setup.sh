@@ -213,11 +213,13 @@ if [ -n "$TREELITE_COMMIT" ]; then
     echo ""
     echo "[Step 6/$TOTAL_STEPS] Building treelite from source..."
     
-    # Check for cmake
+    # Check for cmake and install via uv if needed
     if ! command -v cmake &> /dev/null; then
-        echo "ERROR: cmake is required to build treelite but was not found."
-        echo "Please install cmake (e.g., 'apt install cmake' or 'conda install cmake')"
-        exit 1
+        echo "cmake not found. Installing cmake via uv..."
+        uv pip install cmake
+        echo "cmake installed successfully"
+    else
+        echo "cmake is already available"
     fi
     
     # Check for make
