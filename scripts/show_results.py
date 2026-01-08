@@ -42,6 +42,49 @@ def _parse_profiling_flags(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _infer_num_gpus_from_cuda_device_count(
+    df: pd.DataFrame, df_runs: pd.DataFrame
+) -> pd.DataFrame:
+    """Fill NaN values in num_gpus column with cuda.device_count from run metadata.
+
+    When num_gpus is not explicitly set in the experiment config, infer it from
+    the cuda.device_count captured in the run's system metadata.
+
+    Args:
+        df: DataFrame with num_gpus column and run_id for joining
+        df_runs: DataFrame from load_benchmark_runs with cuda.device_count
+
+    Returns:
+        DataFrame with NaN num_gpus values filled from cuda.device_count
+    """
+    if "num_gpus" not in df.columns:
+        return df
+
+    df = df.copy()
+
+    # Get cuda.cuda_device_count from runs data
+    if "cuda.cuda_device_count" in df_runs.columns:
+        cuda_device_counts = df_runs[["run_id", "cuda.cuda_device_count"]].copy()
+        cuda_device_counts = cuda_device_counts.rename(
+            columns={"cuda.cuda_device_count": "_cuda_device_count"}
+        )
+        cuda_device_counts["_cuda_device_count"] = pd.to_numeric(
+            cuda_device_counts["_cuda_device_count"], errors="coerce"
+        )
+
+        # Merge to get cuda device count per row
+        df = df.merge(cuda_device_counts, on="run_id", how="left")
+
+        # Fill NaN num_gpus with cuda device count
+        mask = pd.isna(df["num_gpus"])
+        df.loc[mask, "num_gpus"] = df.loc[mask, "_cuda_device_count"]
+
+        # Drop temporary column
+        df = df.drop(columns=["_cuda_device_count"])
+
+    return df
+
+
 @click.group()
 @click.option(
     "--db",
@@ -97,8 +140,14 @@ def _detect_cprofile_from_disk(experiment_name: str, datasets_json: str | None, 
 @click.option("--experiment", "-e", default=None, help="Filter by experiment name")
 @click.option("--limit", "-n", default=20, type=int, help="Max rows to show")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.option(
+    "--no-infer-gpu-count",
+    is_flag=True,
+    default=False,
+    help="Don't infer num_gpus from cuda_device_count when num_gpus is not set.",
+)
 @click.pass_context
-def runs(ctx, experiment: str | None, limit: int, as_json: bool):
+def runs(ctx, experiment: str | None, limit: int, as_json: bool, no_infer_gpu_count: bool):
     """List benchmark runs with summary info."""
     df = load_benchmark_runs(experiment_name=experiment, db_path=ctx.obj["db_path"])
 
@@ -131,6 +180,10 @@ def runs(ctx, experiment: str | None, limit: int, as_json: bool):
 
         df_stage_subset = df_stage[merge_cols].drop_duplicates(subset=["run_id"])
         df = df.merge(df_stage_subset, on="run_id", how="left")
+
+        # Infer num_gpus from cuda.device_count if not set (enabled by default)
+        if not no_infer_gpu_count and "num_gpus" in df.columns:
+            df = _infer_num_gpus_from_cuda_device_count(df, df)
 
     # Detect cProfile from disk if not already set (external cProfile invocation)
     db_path = ctx.obj["db_path"]
@@ -420,8 +473,14 @@ def results(ctx, run_id: str, as_json: bool):
     default=False,
     help="Include runs with cProfile or cuml.accel profiling enabled (excluded by default).",
 )
+@click.option(
+    "--no-infer-gpu-count",
+    is_flag=True,
+    default=False,
+    help="Don't infer num_gpus from cuda_device_count when num_gpus is not set.",
+)
 @click.pass_context
-def aggregate(ctx, experiment: str | None, stage: str, as_json: bool, include_profiled: bool):
+def aggregate(ctx, experiment: str | None, stage: str, as_json: bool, include_profiled: bool, no_infer_gpu_count: bool):
     """Aggregate timing results across multiple runs using median.
 
     Shows median timing for the specified stage grouped by dataset and GPU count.
@@ -460,6 +519,10 @@ def aggregate(ctx, experiment: str | None, stage: str, as_json: bool, include_pr
         df_stage = df_stage.rename(columns={"stage_metadata.num_gpus": "num_gpus"})
         # Convert to numeric (may be stored as string due to SQLite/pandas type handling)
         df_stage["num_gpus"] = pd.to_numeric(df_stage["num_gpus"], errors="coerce")
+
+    # Infer num_gpus from cuda.device_count if not set (enabled by default)
+    if not no_infer_gpu_count and "num_gpus" in df_stage.columns:
+        df_stage = _infer_num_gpus_from_cuda_device_count(df_stage, df_runs)
 
     # Extract time_train_s and time_infer_s from results_json
     results_data = []
@@ -549,8 +612,14 @@ DATASET_SIZES = {
     default=False,
     help="Include runs with cProfile or cuml.accel profiling enabled (excluded by default).",
 )
+@click.option(
+    "--no-infer-gpu-count",
+    is_flag=True,
+    default=False,
+    help="Don't infer num_gpus from cuda_device_count when num_gpus is not set.",
+)
 @click.pass_context
-def speedup(ctx, experiment: str | None, as_json: bool, include_profiled: bool):
+def speedup(ctx, experiment: str | None, as_json: bool, include_profiled: bool, no_infer_gpu_count: bool):
     """Compare GPU timing speedup against CPU baseline (num_gpus=0).
 
     Shows speedup ratios for time_train_s and time_infer_s from model results,
@@ -595,6 +664,10 @@ def speedup(ctx, experiment: str | None, as_json: bool, include_profiled: bool):
     # Convert num_gpus to numeric (may be stored as string due to SQLite/pandas type handling)
     df_stage["num_gpus"] = pd.to_numeric(df_stage["num_gpus"], errors="coerce")
 
+    # Infer num_gpus from cuda.device_count if not set (enabled by default)
+    if not no_infer_gpu_count:
+        df_stage = _infer_num_gpus_from_cuda_device_count(df_stage, df_runs)
+
     # Extract time_train_s and time_infer_s from results_json
     results_data = []
     for _, row in df_runs.iterrows():
@@ -620,11 +693,12 @@ def speedup(ctx, experiment: str | None, as_json: bool, include_profiled: bool):
     df_results = pd.DataFrame(results_data)
 
     # Merge with runs to get datasets, and with stage to get num_gpus
+    # Use inner merge with df_stage_subset to exclude profiled runs (already filtered out of df_stage)
     df_runs_subset = df_runs[["run_id", "datasets"]].copy()
     df_stage_subset = df_stage[["run_id", "num_gpus"]].copy()
 
     df_merged = df_results.merge(df_runs_subset, on="run_id", how="left")
-    df_merged = df_merged.merge(df_stage_subset, on="run_id", how="left")
+    df_merged = df_merged.merge(df_stage_subset, on="run_id", how="inner")
 
     # Group by datasets and num_gpus, compute median
     df_agg = (
