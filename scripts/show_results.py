@@ -226,9 +226,9 @@ def runs(ctx, experiment: str | None, limit: int, as_json: bool, no_infer_gpu_co
         # Truncate long strings for display
         df_display = df_display.copy()
         if "run_id" in df_display.columns:
-            df_display["run_id"] = df_display["run_id"].str[:12] + "..."
+            df_display["run_id"] = df_display["run_id"].str[:8]
         if "experiment_id" in df_display.columns:
-            df_display["experiment_id"] = df_display["experiment_id"].str[:12] + "..."
+            df_display["experiment_id"] = df_display["experiment_id"].str[:8]
 
         with pd.option_context(
             "display.max_columns", None,
