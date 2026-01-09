@@ -791,5 +791,176 @@ def speedup(ctx, experiment: str | None, as_json: bool, include_profiled: bool, 
             click.echo(df_display.to_string(index=False))
 
 
+@cli.command()
+@click.argument("id")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.pass_context
+def paths(ctx, id: str, as_json: bool):
+    """Show artifact paths for a run or experiment.
+
+    ID can be either a run_id or experiment_id (partial prefix match supported).
+    Auto-detects the ID type and displays relevant file paths.
+    """
+    db_path = ctx.obj["db_path"]
+    project_root = db_path.parent
+
+    # Load data to detect ID type
+    df_runs = load_benchmark_runs(db_path=db_path)
+    df_timings = load_benchmark_timings(db_path=db_path)
+
+    if df_runs.empty:
+        click.echo("No benchmark runs found.")
+        return
+
+    # Try to match as run_id first
+    run_mask = df_runs["run_id"].str.startswith(id)
+    matched_runs = df_runs[run_mask]
+
+    experiment_id = None
+    datasets_set: set[str] = set()
+    id_type = None
+
+    if not matched_runs.empty:
+        # Found as run_id
+        id_type = "run_id"
+        if len(matched_runs) > 1:
+            click.echo(f"Multiple runs match '{id}'. Please be more specific:")
+            for rid in matched_runs["run_id"].tolist():
+                click.echo(f"  - {rid}")
+            return
+
+        run_row = matched_runs.iloc[0]
+        run_id = run_row["run_id"]
+
+        # Get experiment_id from timings stage_metadata
+        if not df_timings.empty and "stage_metadata.experiment_id" in df_timings.columns:
+            timing_mask = df_timings["run_id"] == run_id
+            timing_rows = df_timings[timing_mask]
+            if not timing_rows.empty:
+                exp_id = timing_rows["stage_metadata.experiment_id"].iloc[0]
+                if pd.notna(exp_id):
+                    experiment_id = str(exp_id)
+
+        # Get datasets from run
+        datasets_json = run_row.get("datasets")
+        if datasets_json:
+            try:
+                datasets_list = json.loads(datasets_json)
+                datasets_set.update(datasets_list)
+            except (json.JSONDecodeError, TypeError):
+                pass
+    else:
+        # Try to match as experiment_id
+        if not df_timings.empty and "stage_metadata.experiment_id" in df_timings.columns:
+            exp_mask = df_timings["stage_metadata.experiment_id"].fillna("").str.startswith(id)
+            matched_timings = df_timings[exp_mask]
+
+            if not matched_timings.empty:
+                id_type = "experiment_id"
+                # Get the full experiment_id
+                unique_exp_ids = matched_timings["stage_metadata.experiment_id"].dropna().unique()
+                # Filter to those that match the prefix
+                matching_exp_ids = [e for e in unique_exp_ids if str(e).startswith(id)]
+
+                if len(matching_exp_ids) > 1:
+                    click.echo(f"Multiple experiments match '{id}'. Please be more specific:")
+                    for eid in matching_exp_ids:
+                        click.echo(f"  - {eid}")
+                    return
+
+                if matching_exp_ids:
+                    experiment_id = str(matching_exp_ids[0])
+
+                # Get all datasets for this experiment
+                run_ids = matched_timings["run_id"].unique()
+                for run_id in run_ids:
+                    run_row = df_runs[df_runs["run_id"] == run_id]
+                    if not run_row.empty:
+                        datasets_json = run_row.iloc[0].get("datasets")
+                        if datasets_json:
+                            try:
+                                datasets_list = json.loads(datasets_json)
+                                datasets_set.update(datasets_list)
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+
+    if id_type is None:
+        click.echo(f"No run or experiment found matching '{id}'")
+        return
+
+    if experiment_id is None:
+        click.echo(f"Found {id_type} but no experiment_id associated.")
+        return
+
+    datasets = sorted(datasets_set)
+
+    # Build path information
+    results_dir = project_root / "results" / experiment_id
+    cprofiles_dir = project_root / "cprofiles" / experiment_id
+
+    # Collect file information
+    results_files = []
+    for dataset in datasets:
+        output_file = results_dir / f"{dataset}_output.txt"
+        results_file = results_dir / f"{dataset}_results.txt"
+        results_files.append({
+            "name": f"{dataset}_output.txt",
+            "path": str(output_file),
+            "exists": output_file.exists(),
+        })
+        results_files.append({
+            "name": f"{dataset}_results.txt",
+            "path": str(results_file),
+            "exists": results_file.exists(),
+        })
+
+    cprofile_files = []
+    for dataset in datasets:
+        prof_file = cprofiles_dir / f"{dataset}.prof"
+        cprofile_files.append({
+            "name": f"{dataset}.prof",
+            "path": str(prof_file),
+            "exists": prof_file.exists(),
+        })
+
+    if as_json:
+        output = {
+            "id": id,
+            "id_type": id_type,
+            "experiment_id": experiment_id,
+            "datasets": datasets,
+            "results_dir": str(results_dir),
+            "results_dir_exists": results_dir.exists(),
+            "results_files": results_files,
+            "cprofiles_dir": str(cprofiles_dir),
+            "cprofiles_dir_exists": cprofiles_dir.exists(),
+            "cprofile_files": cprofile_files,
+        }
+        click.echo(json.dumps(output, indent=2))
+    else:
+        click.echo(f"ID: {id} ({id_type})")
+        click.echo(f"Experiment: {experiment_id}")
+        click.echo(f"Datasets: {', '.join(datasets)}")
+        click.echo("=" * 60)
+
+        # Results directory
+        click.echo(f"\nResults Directory: {results_dir}/")
+        if results_dir.exists():
+            for f in results_files:
+                marker = "[x]" if f["exists"] else "[ ]"
+                click.echo(f"  {marker} {f['name']}")
+        else:
+            click.echo("  (directory not found)")
+
+        # cProfiles directory
+        click.echo(f"\ncProfile Directory: {cprofiles_dir}/")
+        if cprofiles_dir.exists():
+            for f in cprofile_files:
+                marker = "[x]" if f["exists"] else "[ ]"
+                click.echo(f"  {marker} {f['name']}")
+        else:
+            click.echo("  (directory not found)")
+
+
 if __name__ == "__main__":
     cli()
