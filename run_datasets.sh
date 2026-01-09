@@ -137,6 +137,7 @@ for dataset in "${datasets[@]}"; do
     # Add script arguments
     CMD="$CMD --datasets $dataset --experiment-name $EXPERIMENT_NAME"
     [ -n "$NUM_GPUS" ] && CMD="$CMD --num-gpus $NUM_GPUS"
+    CMD="$CMD --metadata experiment_id=$EXPERIMENT_ID"
     [ "$CPROFILE" = true ] && CMD="$CMD --metadata cprofile=true"
     [ "$CUML_PROFILE" = true ] && CMD="$CMD --metadata cuml_accel_profile=true"
 

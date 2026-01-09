@@ -169,8 +169,14 @@ def runs(ctx, experiment: str | None, limit: int, as_json: bool, no_infer_gpu_co
             # Convert to numeric (may be stored as string due to SQLite/pandas type handling)
             df_stage["num_gpus"] = pd.to_numeric(df_stage["num_gpus"], errors="coerce")
 
+        # Rename experiment_id column if present
+        if "stage_metadata.experiment_id" in df_stage.columns:
+            df_stage = df_stage.rename(columns={"stage_metadata.experiment_id": "experiment_id"})
+
         # Select columns to merge
         merge_cols = ["run_id"]
+        if "experiment_id" in df_stage.columns:
+            merge_cols.append("experiment_id")
         if "num_gpus" in df_stage.columns:
             merge_cols.append("num_gpus")
         if "profiling_cprofile" in df_stage.columns:
@@ -201,6 +207,7 @@ def runs(ctx, experiment: str | None, limit: int, as_json: bool, no_infer_gpu_co
     # Select key columns for display
     display_cols = [
         "run_id",
+        "experiment_id",
         "execution_datetime",
         "total_time_s",
         "datasets",
@@ -217,9 +224,11 @@ def runs(ctx, experiment: str | None, limit: int, as_json: bool, no_infer_gpu_co
         click.echo(df_display.to_json(orient="records", indent=2))
     else:
         # Truncate long strings for display
+        df_display = df_display.copy()
         if "run_id" in df_display.columns:
-            df_display = df_display.copy()
             df_display["run_id"] = df_display["run_id"].str[:12] + "..."
+        if "experiment_id" in df_display.columns:
+            df_display["experiment_id"] = df_display["experiment_id"].str[:12] + "..."
 
         with pd.option_context(
             "display.max_columns", None,
