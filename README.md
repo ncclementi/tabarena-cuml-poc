@@ -41,26 +41,26 @@ You can modify the script to experiment with other models or datasets as needed.
 
 ### Running benchmarks
 
-Run benchmarks on multiple datasets using the `run_datasets.sh` script:
+Run benchmarks on multiple datasets using the `run.sh` script:
 
 ```bash
 # Run without profiling (GPU-accelerated by default if GPUs are present)
-./run_datasets.sh
+./run.sh
 
 # Run with cuml.accel profiling
-./run_datasets.sh --cuml-profile
+./run.sh --cuml-profile
 
 # Run with cProfile profiling
-./run_datasets.sh --cprofile
+./run.sh --cprofile
 
 # Run with both profiling modes
-./run_datasets.sh --cuml-profile --cprofile
+./run.sh --cuml-profile --cprofile
 
 # Run on CPU only (no cuml.accel)
-./run_datasets.sh --num-gpus 0
+./run.sh --num-gpus 0
 
 # Use a custom experiment ID
-./run_datasets.sh --experiment-id my_experiment_001
+./run.sh --experiment-id my_experiment_001
 ```
 
 Results are saved to `results/<experiment-id>/` and cProfile files (when enabled) to `cprofiles/<experiment-id>/`.
