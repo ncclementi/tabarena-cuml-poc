@@ -21,3 +21,7 @@ __pycache__/
 
 # Ignore std.out files
 *.out
+
+# Ignore results/ and cprofiles/ dirs by default
+results/
+cprofiles/

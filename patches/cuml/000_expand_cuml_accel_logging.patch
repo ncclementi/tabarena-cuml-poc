@@ -1,0 +1,18 @@
+diff --git a/python/cuml/cuml/accel/estimator_proxy.py b/python/cuml/cuml/accel/estimator_proxy.py
+index ca5a9e7d3..b2d9f58df 100644
+--- a/python/cuml/cuml/accel/estimator_proxy.py
++++ b/python/cuml/cuml/accel/estimator_proxy.py
+@@ -210,10 +210,13 @@ class ProxyBase(BaseEstimator):
+         """
+         if self._gpu is not None and not self._synced:
+             self._gpu._sync_attrs_to_cpu(self._cpu)
++            logger.debug(f"{id(self)} - _sync_attrs_to_cpu ran")
+             self._synced = True
+             logger.debug(
+                 f"`{self._cpu_class.__name__}` fitted attributes synced to CPU"
+             )
++        else:
++            logger.debug(f"{id(self)} - _sync_attrs_to_cpu debounced")
+ 
+     @classmethod
+     def _reconstruct_from_cpu(cls, cpu):

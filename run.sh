@@ -119,15 +119,9 @@ for dataset in "${datasets[@]}"; do
     # Build command incrementally
     CMD="python"
 
-    # Add cProfile module if enabled
-    if [ "$CPROFILE" = true ]; then
-        PROFILE_FILE="$PROFILES_DIR/${dataset}.prof"
-        CMD="$CMD -m cProfile -o $PROFILE_FILE"
-    fi
-
     # Add cuml.accel module if GPU mode (NUM_GPUS != 0)
     if [ "$NUM_GPUS" != "0" ]; then
-        CMD="$CMD -m cuml.accel"
+        CMD="$CMD -m cuml.accel -vv"
         [ "$CUML_PROFILE" = true ] && CMD="$CMD --profile"
     fi
 
@@ -138,8 +132,16 @@ for dataset in "${datasets[@]}"; do
     CMD="$CMD --datasets $dataset --experiment-name $EXPERIMENT_NAME"
     [ -n "$NUM_GPUS" ] && CMD="$CMD --num-gpus $NUM_GPUS"
     CMD="$CMD --metadata experiment_id=$EXPERIMENT_ID"
-    [ "$CPROFILE" = true ] && CMD="$CMD --metadata cprofile=true"
     [ "$CUML_PROFILE" = true ] && CMD="$CMD --metadata cuml_accel_profile=true"
+
+    # Add cProfile metadata and set env var for profiling the model_fit section
+    if [ "$CPROFILE" = true ]; then
+        PROFILE_FILE="$PROFILES_DIR/${dataset}.prof"
+        CMD="$CMD --metadata cprofile=true"
+        export CPROFILE_OUTPUT="$PROFILE_FILE"
+    else
+        unset CPROFILE_OUTPUT
+    fi
 
     echo "Running: $CMD"
     eval "$CMD" 2>&1 | tee "$OUTPUT_FILE"

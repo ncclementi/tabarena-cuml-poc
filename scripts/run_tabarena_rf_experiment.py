@@ -207,6 +207,7 @@ def main(
 
     # Get the run artifacts.
     # Fits each method on each task (datasets * folds)
+    # Note: cProfile is controlled via CPROFILE_OUTPUT env var in abstract_trainer.py
     with timer.time("model_fit", metadata={"datasets": dataset_list, "folds": folds}):
         results_lst: list[dict[str, Any]] = exp_batch_runner.run(
             datasets=dataset_list,

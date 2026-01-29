@@ -49,11 +49,11 @@ THIRDPARTY_DIR="$SCRIPT_DIR/src/thirdparty"
 mkdir -p "$THIRDPARTY_DIR"
 
 # Commit hashes (set to empty string to use latest main/master)
-AUTOGLUON_COMMIT="656a70d"
+AUTOGLUON_COMMIT="0802727"
 TABARENA_COMMIT="aeff2d8"   # Example: "789ghi012jkl"
 # TREELITE_REPO="https://github.com/dmlc/treelite"
-TREELITE_REPO="https://github.com/dantegd/treelite.git"
-TREELITE_COMMIT="0c46c84b9d72174de9b9a6c59e15865d895c6137"          # Set to build treelite from source, e.g., "abc123def456"
+TREELITE_REPO="https://github.com/csadorf/treelite.git"
+TREELITE_COMMIT="bb4f295b07a3ce4ae0544df333e49846c1b6b72f"
 
 # Determine total steps based on whether treelite will be built
 if [ -n "$TREELITE_COMMIT" ]; then
@@ -165,6 +165,25 @@ if [ -n "$AUTOGLUON_COMMIT" ]; then
     git checkout "$AUTOGLUON_COMMIT"
 fi
 
+# Apply patches from patches/autogluon/ in alphabetical order
+AUTOGLUON_PATCHES_DIR="$SCRIPT_DIR/patches/autogluon"
+if [ -d "$AUTOGLUON_PATCHES_DIR" ]; then
+    PATCH_FILES=$(find "$AUTOGLUON_PATCHES_DIR" -maxdepth 1 -name "*.patch" -type f | sort)
+    if [ -n "$PATCH_FILES" ]; then
+        echo "Applying patches from $AUTOGLUON_PATCHES_DIR..."
+        for patch_file in $PATCH_FILES; do
+            echo "  Applying $(basename "$patch_file")..."
+            git apply "$patch_file" && echo "    Applied successfully" || {
+                echo "    WARNING: Failed to apply $(basename "$patch_file") (may already be applied or conflicts exist)"
+            }
+        done
+    else
+        echo "No patches found in $AUTOGLUON_PATCHES_DIR"
+    fi
+else
+    echo "No patches directory found at $AUTOGLUON_PATCHES_DIR"
+fi
+
 echo "Running full_install.sh..."
 chmod +x full_install.sh
 ./full_install.sh
@@ -254,6 +273,25 @@ if [ -n "$TREELITE_COMMIT" ]; then
     git checkout "$TREELITE_COMMIT"
     git submodule update --init --recursive
     
+    # Apply patches from patches/treelite/ in alphabetical order
+    TREELITE_PATCHES_DIR="$SCRIPT_DIR/patches/treelite"
+    if [ -d "$TREELITE_PATCHES_DIR" ]; then
+        PATCH_FILES=$(find "$TREELITE_PATCHES_DIR" -maxdepth 1 -name "*.patch" -type f | sort)
+        if [ -n "$PATCH_FILES" ]; then
+            echo "Applying patches from $TREELITE_PATCHES_DIR..."
+            for patch_file in $PATCH_FILES; do
+                echo "  Applying $(basename "$patch_file")..."
+                git apply "$patch_file" && echo "    Applied successfully" || {
+                    echo "    WARNING: Failed to apply $(basename "$patch_file") (may already be applied or conflicts exist)"
+                }
+            done
+        else
+            echo "No patches found in $TREELITE_PATCHES_DIR"
+        fi
+    else
+        echo "No patches directory found at $TREELITE_PATCHES_DIR"
+    fi
+    
     # Build shared libraries
     echo "Building treelite shared libraries..."
     rm -rf build
@@ -281,6 +319,53 @@ echo ""
 echo "[Step $CUML_STEP/$TOTAL_STEPS] Installing cuML..."
 uv pip install "cuml-cu13==25.12.00"
 echo "cuML installed"
+
+# Apply patches from patches/cuml/ in alphabetical order
+# NOTE: cuml patches can only modify Python files since we patch the installed package
+CUML_PATCHES_DIR="$SCRIPT_DIR/patches/cuml"
+if [ -d "$CUML_PATCHES_DIR" ]; then
+    PATCH_FILES=$(find "$CUML_PATCHES_DIR" -maxdepth 1 -name "*.patch" -type f | sort)
+    if [ -n "$PATCH_FILES" ]; then
+        echo ""
+        echo "Applying patches from $CUML_PATCHES_DIR..."
+        
+        # Validate that all patches only modify .py files
+        for patch_file in $PATCH_FILES; do
+            # Extract file paths from patch (lines starting with +++ b/ or --- a/)
+            NON_PY_FILES=$(grep -E '^(\+\+\+|\-\-\-) [ab]/' "$patch_file" | sed 's/^[+-]* [ab]\///' | grep -v '\.py$' || true)
+            if [ -n "$NON_PY_FILES" ]; then
+                echo "ERROR: Patch $(basename "$patch_file") modifies non-Python files:"
+                echo "$NON_PY_FILES" | sed 's/^/  /'
+                echo "cuml patches can only modify .py files since we patch the installed package."
+                exit 1
+            fi
+        done
+        
+        # Find the cuml installation directory
+        CUML_INSTALL_DIR=$(python -c "import cuml; import os; print(os.path.dirname(cuml.__file__))")
+        
+        if [ -d "$CUML_INSTALL_DIR" ]; then
+            echo "Found cuml installation at: $CUML_INSTALL_DIR"
+            cd "$CUML_INSTALL_DIR"
+            
+            for patch_file in $PATCH_FILES; do
+                echo "  Applying $(basename "$patch_file")..."
+                # The patches use path python/cuml/cuml/... so strip with -p4
+                patch -p4 < "$patch_file" && echo "    Applied successfully" || {
+                    echo "    WARNING: Failed to apply $(basename "$patch_file") (may already be applied or conflicts exist)"
+                }
+            done
+            
+            cd "$SCRIPT_DIR"
+        else
+            echo "WARNING: Could not find cuml installation directory"
+        fi
+    else
+        echo "No patches found in $CUML_PATCHES_DIR"
+    fi
+else
+    echo "No patches directory found at $CUML_PATCHES_DIR"
+fi
 
 echo "========================================"
 echo "Setup completed successfully!"
