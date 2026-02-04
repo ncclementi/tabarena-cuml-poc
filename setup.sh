@@ -9,13 +9,13 @@ usage() {
     echo ""
     echo "Options:"
     echo "  -h, --help              Show this help message and exit"
-    echo "  --ignore-cuda-warning   Bypass CUDA 13 version check"
+    echo "  --ignore-cuda-warning   Bypass CUDA 12/13 version check"
     echo ""
     echo "This script will:"
     echo "  1. Install uv (if not present)"
     echo "  2. Create a Python 3.12 virtual environment"
-    echo "  3. Check for CUDA 13"
-    echo "  4. Install PyTorch with CUDA 13 support"
+    echo "  3. Check for CUDA 12 or 13"
+    echo "  4. Install PyTorch with CUDA 12 or 13 support"
     echo "  5. Clone and install AutoGluon"
     echo "  6. Clone and install TabArena"
     echo "  7. Build and install treelite from source (if TREELITE_COMMIT is set)"
@@ -95,27 +95,38 @@ echo "Virtual environment created"
 # Activate the virtual environment
 source .venv/bin/activate
 
-# Step 2: Check for CUDA 13
+# Step 2: Check for CUDA 12 or 13
 echo ""
-echo "[Step 2/$TOTAL_STEPS] Checking for CUDA 13..."
+echo "[Step 2/$TOTAL_STEPS] Checking for CUDA 12 or 13..."
 if command -v nvidia-smi &> /dev/null; then
     CUDA_VERSION=$(nvidia-smi | grep -oP 'CUDA Version: \K[0-9.]+')
     CUDA_MAJOR=$(echo $CUDA_VERSION | cut -d'.' -f1)
     echo "CUDA version $CUDA_VERSION detected (from nvidia-smi)"
-    if [ "$CUDA_MAJOR" != "13" ]; then
+    if [ "$CUDA_MAJOR" != "12" ] && [ "$CUDA_MAJOR" != "13" ]; then
         if [ "$IGNORE_CUDA_WARNING" = true ]; then
-            echo "WARNING: Expected CUDA 13 but found CUDA $CUDA_VERSION. Continuing anyway (--ignore-cuda-warning)."
+            echo "WARNING: Expected CUDA 12 or 13 but found CUDA $CUDA_VERSION. Continuing anyway (--ignore-cuda-warning)."
         else
-            echo "ERROR: Expected CUDA 13 but found CUDA $CUDA_VERSION."
+            echo "ERROR: Expected CUDA 12 or 13 but found CUDA $CUDA_VERSION."
             echo "Use --ignore-cuda-warning to bypass this check."
             exit 1
         fi
     fi
+    # Set CUDA-specific variables for package installation
+    DETECTED_CUDA_MAJOR=$CUDA_MAJOR
+    if [ "$CUDA_MAJOR" = "12" ]; then
+        CUDA_INDEX="121"
+    elif [ "$CUDA_MAJOR" = "13" ]; then
+        CUDA_INDEX="130"
+    fi
+    echo "Using CUDA $DETECTED_CUDA_MAJOR (PyTorch index: cu${CUDA_INDEX})"
 else
     if [ "$IGNORE_CUDA_WARNING" = true ]; then
         echo "WARNING: nvidia-smi not found. Continuing anyway (--ignore-cuda-warning)."
+        # Default to CUDA 12 if not detected
+        DETECTED_CUDA_MAJOR="12"
+        CUDA_INDEX="121"
     else
-        echo "ERROR: nvidia-smi not found. NVIDIA driver with CUDA 13 support must be installed."
+        echo "ERROR: nvidia-smi not found. NVIDIA driver with CUDA 12 or 13 support must be installed."
         echo "Use --ignore-cuda-warning to bypass this check."
         exit 1
     fi
@@ -125,13 +136,13 @@ fi
 echo ""
 echo "[Step 3/$TOTAL_STEPS] Installing PyTorch..."
 uv pip install \
-    --index-url https://download.pytorch.org/whl/cu130 \
+    --index-url https://download.pytorch.org/whl/cu${CUDA_INDEX} \
     torch \
     torchvision \
     && echo "torch installed"
 
 uv pip install \
-    --extra-index-url https://download.pytorch.org/whl/cu130 \
+    --extra-index-url https://download.pytorch.org/whl/cu${CUDA_INDEX} \
     pytorch-metric-learning \
     && echo "pytorch-metric-learning installed"
 
@@ -317,7 +328,7 @@ else
 fi
 echo ""
 echo "[Step $CUML_STEP/$TOTAL_STEPS] Installing cuML..."
-uv pip install "cuml-cu13==25.12.00"
+uv pip install "cuml-cu${DETECTED_CUDA_MAJOR}==25.12.00"
 echo "cuML installed"
 
 # Apply patches from patches/cuml/ in alphabetical order
